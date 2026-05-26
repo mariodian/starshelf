@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Star Categorizer - Settings</title>
+  <link rel="stylesheet" href="./style.css" />
+</head>
+<body>
+  <div class="container">
+    <h1>GitHub Star Categorizer</h1>
+
+    <section>
+      <h2>GitHub Token <span class="optional">(optional)</span></h2>
+      <p>Used to verify star status and fetch repo metadata. Create a <a href="https://github.com/settings/tokens" target="_blank">classic token</a> with no scopes.</p>
+      <div class="field">
+        <input type="password" id="githubToken" placeholder="ghp_..." autocomplete="off" />
+        <button id="saveGithubToken">Save</button>
+        <button id="deleteGithubToken" class="danger">Delete</button>
+      </div>
+    </section>
+
+    <section>
+      <h2>AI Provider</h2>
+      <div class="field">
+        <select id="aiProvider">
+          <option value="anthropic">Anthropic</option>
+          <option value="openai">OpenAI</option>
+          <option value="opencode">OpenCode</option>
+        </select>
+      </div>
+    </section>
+
+    <section id="providerSettings">
+      <h2>Provider Settings</h2>
+
+      <div class="field">
+        <label for="apiKey">API Key</label>
+        <input type="password" id="apiKey" autocomplete="off" />
+        <button id="saveApiKey">Save Key</button>
+        <button id="deleteApiKey" class="danger">Delete Key</button>
+      </div>
+
+      <div class="field" id="openCodeEndpointField" style="display:none">
+        <label for="openCodeEndpoint">Endpoint</label>
+        <select id="openCodeEndpoint">
+          <option value="zen">Zen (opencode.ai/zen/v1)</option>
+          <option value="zen-go">Go (opencode.ai/zen/go/v1)</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label for="model">Model</label>
+        <input type="text" id="model" placeholder="e.g. claude-sonnet-4-20250514 or opencode/gpt-5.1-codex" />
+        <button id="fetchModels" style="display:none">Fetch Models</button>
+      </div>
+
+      <div class="field">
+        <select id="modelSelect" style="display:none"></select>
+      </div>
+    </section>
+
+    <section>
+      <h2>Categorized Repositories</h2>
+      <div id="repoList"></div>
+    </section>
+  </div>
+
+  <script type="module" src="./main.ts"></script>
+</body>
+</html>
