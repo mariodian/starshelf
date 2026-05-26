@@ -12,6 +12,10 @@ import type { AiProviderClient } from '@/shared/providers/base';
 import { categorizeRepository } from '@/shared/categorizer';
 
 export default defineBackground(() => {
+  if (import.meta.env.DEV) {
+    import('@/shared/dev-bootstrap').then((m) => m.seedFromEnvIfMissing());
+  }
+
   browser.runtime.onMessage.addListener(
     (message: ContentMessage, sender) => {
       if (message.type === 'repoStarClicked') {
