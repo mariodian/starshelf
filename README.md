@@ -59,6 +59,21 @@ bun run zip
 
 Load the `dist/` folder as an unpacked extension in `chrome://extensions`.
 
+### Persistent Dev Profile
+
+`bun run dev` uses a persistent Chromium profile stored in `.wxt/chrome-data/`. Combined with the fixed extension `key` in the manifest (dev only), this means:
+
+- **Stable extension ID** — A hardcoded RSA key is embedded in `wxt.config.ts` so Chrome computes the same extension ID every time. Set `WXT_DEV_EXTENSION_KEY` to override the built-in default.
+- **Pinned extension** — Once you pin the extension or install devtools extensions, they stay pinned/installed across dev sessions.
+- **Settings & logins persist** — `keepProfileChanges: true` tells WXT not to discard the profile after each run, so browser settings and logins survive restarts.
+- **Auto-open GitHub** — GitHub opens automatically in a new tab when the dev browser starts (`startUrls`).
+
+This is dev-only (`webExt` config is ignored by `wxt build`) and does not affect production builds.
+
+The `.wxt/` directory is gitignored, so the profile is local to your machine.
+
+> **Note:** If you previously ran `bun run dev` without a stable extension key, Chrome will see the extension as new on the next start. Pin it once to the toolbar — it will survive all subsequent restarts.
+
 ## Permissions
 
 | Permission | Why |
