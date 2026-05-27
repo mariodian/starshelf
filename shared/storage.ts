@@ -48,6 +48,7 @@ export class ExtensionStorage {
   async getSettings(): Promise<ExtensionSettings> {
     const defaults: ExtensionSettings = {
       activeProvider: 'anthropic',
+      githubToken: undefined,
       providers: {
         anthropic: {},
         openai: {},
