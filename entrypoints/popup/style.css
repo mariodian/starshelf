@@ -149,10 +149,9 @@ button.small {
 
 .flash {
   position: fixed;
-  bottom: 12px;
+  top: 12px;
   right: 12px;
-  background: #238636;
-  color: #fff;
+  color: #238636;
   padding: 8px 14px;
   border-radius: 8px;
   font-size: 12px;
@@ -163,7 +162,7 @@ button.small {
 }
 
 .flash-error {
-  background: #da3633;
+  color: #da3633;
 }
 
 .hint {

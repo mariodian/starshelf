@@ -8,7 +8,7 @@ Chrome extension that auto-categorizes GitHub repos when you star them — using
 entrypoints/
   background.ts    → Service worker: secrets, API calls, settings, logic
   content.ts       → Content script: star-button detection, status overlay
-  options/         → Settings page: providers, API keys, models
+  popup/           → Settings popup: providers, API keys, models
 shared/
   types/messages.ts   → Typed content↔background message protocol
   storage.ts          → Extension storage abstraction (encryption-ready)
