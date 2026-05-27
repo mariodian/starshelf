@@ -14,12 +14,11 @@
         <h2>GitHub Token</h2>
         <p>
           Create a
-          <a
-            href="https://github.com/settings/tokens/new"
-            target="_blank"
+          <a href="https://github.com/settings/tokens/new" target="_blank"
             >classic personal access token</a
           >
-          with the <code>user</code> scope. Fine-grained tokens are not supported.
+          with the <code>user</code>, <code>public_repo</code> and
+          <code>gist</code> scope. Fine-grained tokens are not supported.
         </p>
         <div class="field">
           <input
@@ -31,7 +30,10 @@
           <button id="saveGithubToken">Save</button>
           <button id="deleteGithubToken" class="danger">Delete</button>
         </div>
-        <p class="hint">Only classic tokens with <code>user</code> scope work. Fine-grained PATs lack the required star-list API access.</p>
+        <p class="hint">
+          Only classic tokens with <code>user</code> scope work. Fine-grained
+          PATs lack the required star-list API access.
+        </p>
       </section>
 
       <section>
@@ -87,11 +89,6 @@
             <option value="public">Public</option>
           </select>
         </div>
-      </section>
-
-      <section>
-        <h2>Categorized Repos</h2>
-        <div id="repoList"></div>
       </section>
     </div>
 

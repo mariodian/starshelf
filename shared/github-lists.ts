@@ -152,6 +152,21 @@ export async function updateUserListsForItem(
   );
 }
 
+export async function starRepository(
+  starrableId: string,
+  token: string,
+): Promise<void> {
+  await graphqlRequest(
+    token,
+    `mutation($input: AddStarInput!) {
+      addStar(input: $input) {
+        clientMutationId
+      }
+    }`,
+    { input: { starrableId } },
+  );
+}
+
 export function fuzzyMatchListName(
   category: string,
   lists: GitHubList[],

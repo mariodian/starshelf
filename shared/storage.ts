@@ -6,7 +6,6 @@ export interface ExtensionSettings {
     openai: { apiKey?: string; model?: string };
     opencode: { apiKey?: string; model?: string; endpoint: 'zen' | 'zen-go' };
   };
-  categorizedRepos: Record<string, { category: string; starredAt: number }>;
   listPrivacy: 'public' | 'private';
 }
 
@@ -55,7 +54,6 @@ export class ExtensionStorage {
         openai: {},
         opencode: { endpoint: 'zen' },
       },
-      categorizedRepos: {},
       listPrivacy: 'private',
     };
     const keys = Object.keys(defaults) as (keyof ExtensionSettings)[];

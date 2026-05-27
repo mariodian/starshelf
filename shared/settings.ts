@@ -131,8 +131,6 @@ function render() {
   el.modelSelect.style.display = 'none';
 
   el.listPrivacy.value = settings.listPrivacy;
-
-  renderRepoList(el);
 }
 
 function setProviderConfig(
@@ -152,36 +150,6 @@ function setProviderConfig(
   }
 }
 
-function renderRepoList(el: ReturnType<typeof getElements>) {
-  const entries = Object.entries(settings.categorizedRepos);
-  if (entries.length === 0) {
-    el.repoList.innerHTML = '<p class="muted">No repositories categorized yet. Star a repo on GitHub to begin.</p>';
-    return;
-  }
-
-  el.repoList.innerHTML = entries
-    .map(
-      ([fullName, data]) => `
-      <div class="repo-row">
-        <span class="repo-name">${escapeHtml(fullName)}</span>
-        <span class="repo-tag">${escapeHtml(data.category)}</span>
-        <button class="danger small" data-repo="${escapeAttr(fullName)}">Remove</button>
-      </div>`,
-    )
-    .join('');
-
-  el.repoList.querySelectorAll<HTMLButtonElement>('.danger.small').forEach((btn) => {
-    btn.addEventListener('click', async () => {
-      const repo = btn.dataset.repo!;
-      const updated = { ...settings.categorizedRepos };
-      delete updated[repo];
-      settings.categorizedRepos = updated;
-      await storage.set('categorizedRepos', updated);
-      renderRepoList(el);
-    });
-  });
-}
-
 function flash(msg: string, isError = false) {
   const existing = document.getElementById('flash');
   if (existing) {
@@ -199,14 +167,6 @@ function flash(msg: string, isError = false) {
   document.body.appendChild(div);
   requestAnimationFrame(() => { div.style.opacity = '1'; });
   setTimeout(() => { div.style.opacity = '0'; }, 2500);
-}
-
-function escapeHtml(s: string) {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-}
-
-function escapeAttr(s: string) {
-  return s.replace(/"/g, '&quot;');
 }
 
 let _elCache: ReturnType<typeof queryElements> | null = null;
@@ -231,6 +191,5 @@ function queryElements() {
     fetchModels: document.getElementById('fetchModels') as HTMLButtonElement,
     modelSelect: document.getElementById('modelSelect') as HTMLSelectElement,
     listPrivacy: document.getElementById('listPrivacy') as HTMLSelectElement,
-    repoList: document.getElementById('repoList') as HTMLElement,
   };
 }

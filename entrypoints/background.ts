@@ -12,6 +12,7 @@ import {
   getRepoNodeId,
   updateUserListsForItem,
   fuzzyMatchListName,
+  starRepository,
   type GitHubList,
 } from '@/shared/github-lists';
 import { AnthropicClient } from '@/shared/providers/anthropic';
@@ -66,11 +67,6 @@ async function handleStarClick(
     // GitHub handles removing the repo from any lists on unstar.
     if (action === 'unstar') {
       console.log('[stars] bg unstar branch | fullName:', fullName);
-      if (settings.categorizedRepos[fullName]) {
-        const categorizedRepos = { ...settings.categorizedRepos };
-        delete categorizedRepos[fullName];
-        await storage.setSettings({ ...settings, categorizedRepos });
-      }
       await sendStatus(tabId, owner, repo, 'removed');
       return;
     }
@@ -87,12 +83,6 @@ async function handleStarClick(
       console.error('[stars] bg | token validation FAILED:', err);
       const msg = err instanceof Error ? err.message : 'Token validation failed';
       await sendStatus(tabId, owner, repo, 'error', undefined, msg);
-      return;
-    }
-
-    const cached = settings.categorizedRepos[fullName];
-    if (cached) {
-      await sendStatus(tabId, owner, repo, 'saved', cached.category);
       return;
     }
 
@@ -130,6 +120,20 @@ async function handleStarClick(
       return;
     }
 
+    // Resolve repo node ID and ensure it's starred before list operations
+    let repoNodeId: string;
+    try {
+      console.log('[stars] bg | getRepoNodeId...');
+      repoNodeId = await getRepoNodeId(owner, repo, token);
+      console.log('[stars] bg | starRepository...');
+      await starRepository(repoNodeId, token);
+    } catch (err) {
+      console.error('[stars] bg | star operation FAILED:', err);
+      const msg = err instanceof Error ? err.message : 'Star operation failed';
+      await sendStatus(tabId, owner, repo, 'error', undefined, msg);
+      return;
+    }
+
     // AI categorize
     const existingNames = lists.map((l) => l.name);
     let category: string;
@@ -150,8 +154,6 @@ async function handleStarClick(
 
     if (matchedList) {
       try {
-        console.log('[stars] bg | getRepoNodeId...');
-        const repoNodeId = await getRepoNodeId(owner, repo, token);
         console.log('[stars] bg | updateUserListsForItem...');
         await updateUserListsForItem(repoNodeId, [matchedList.id], token);
         console.log('[stars] bg | added to list:', matchedList.name);
@@ -162,18 +164,12 @@ async function handleStarClick(
         return;
       }
 
-      const categorizedRepos = { ...settings.categorizedRepos };
-      categorizedRepos[fullName] = { category: matchedList.name, starredAt: Date.now() };
-      await storage.setSettings({ ...settings, categorizedRepos });
-
       await sendStatus(tabId, owner, repo, 'saved', matchedList.name);
     } else {
       try {
         const isPrivate = settings.listPrivacy === 'private';
         console.log('[stars] bg | createUserList:', category);
         const newList = await createUserList(category, isPrivate, token);
-        console.log('[stars] bg | getRepoNodeId...');
-        const repoNodeId = await getRepoNodeId(owner, repo, token);
         console.log('[stars] bg | updateUserListsForItem...');
         await updateUserListsForItem(repoNodeId, [newList.id], token);
         console.log('[stars] bg | created+added to list:', newList.name);
@@ -183,10 +179,6 @@ async function handleStarClick(
         await sendStatus(tabId, owner, repo, 'error', undefined, msg);
         return;
       }
-
-      const categorizedRepos = { ...settings.categorizedRepos };
-      categorizedRepos[fullName] = { category, starredAt: Date.now() };
-      await storage.setSettings({ ...settings, categorizedRepos });
 
       await sendStatus(tabId, owner, repo, 'saved', category);
     }

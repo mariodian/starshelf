@@ -155,6 +155,8 @@ function showOverlay(payload: BackgroundMessage['payload']) {
       pointerEvents: 'none',
       transition: 'opacity 0.3s',
       whiteSpace: 'nowrap',
+      maxWidth: '360px',
+      width: 'max-content',
       opacity: '0',
     });
     document.body.appendChild(el);
@@ -164,7 +166,8 @@ function showOverlay(payload: BackgroundMessage['payload']) {
   if (btn) {
     const r = btn.getBoundingClientRect();
     el.style.top = `${r.bottom + window.scrollY + 4}px`;
-    el.style.left = `${r.left + window.scrollX}px`;
+    el.style.left = `${r.right + window.scrollX}px`;
+    el.style.transform = 'translateX(-100%)';
   }
 
   const { status, category, error } = payload;
