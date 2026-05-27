@@ -32,7 +32,9 @@ export default defineConfig({
         // Persistent profile so settings, logins, devtools extensions, and
         // extension pin state survive across dev restarts.
         chromiumArgs: [`--user-data-dir=${profileDir}`],
-        startUrls: ["https://github.com"],
+        startUrls: process.env.VITE_START_URL
+          ? [process.env.VITE_START_URL]
+          : undefined,
       }
     : undefined,
 });

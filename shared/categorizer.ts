@@ -6,6 +6,7 @@ export async function categorizeRepository(
   metadata: RepoMetadata,
   owner: string,
   repo: string,
+  existingLists: string[],
 ): Promise<string> {
-  return client.categorize(metadata, owner, repo);
+  return client.categorize(metadata, owner, repo, existingLists);
 }

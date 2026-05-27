@@ -6,7 +6,6 @@ const OVERLAY_ID = 'star-categorizer-overlay';
 export default defineContentScript({
   matches: ['https://github.com/*'],
   main() {
-    // Inject keyframe animation for the spinner
     if (!document.getElementById(STYLE_ID)) {
       const style = document.createElement('style');
       style.id = STYLE_ID;
@@ -35,63 +34,28 @@ export default defineContentScript({
 });
 
 // ---------------------------------------------------------------------------
-// Star button detection
+// Star button click detection — tracks button state to infer intent.
+// MutationObserver callbacks fire in microtask *after* the click, so
+// `wasStarred` holds the pre-click value when our handler runs.
+// Comparing pre-click state to the (already-mutated) DOM gives us intent.
 // ---------------------------------------------------------------------------
 
-let buttonObserver: MutationObserver | null = null;
 let containerObserver: MutationObserver | null = null;
-let lastStarred: boolean | null = null;
 let currentRepo: { owner: string; repo: string } | null = null;
+let wasStarred = false;
 
 function findStarButton(): HTMLButtonElement | null {
-  return document.querySelector<HTMLButtonElement>(
-    'button[aria-label*="star" i], [data-testid="star-repo-button"], button[data-view-component="true"][value*="star" i]',
+  const buttons = document.querySelectorAll<HTMLButtonElement>(
+    '.starring-container button[type="submit"]',
   );
+  for (const btn of buttons) {
+    if (btn.offsetParent !== null) return btn;
+  }
+  return null;
 }
 
-function isStarred(btn: HTMLButtonElement): boolean {
-  const text = (btn.textContent ?? '').toLowerCase();
-  const aria = (btn.getAttribute('aria-label') ?? '').toLowerCase();
-
-  // After starring the button reads "Unstar"
-  if (text.includes('unstar') || aria.startsWith('unstar')) return true;
-  // Before starring it says "Star"
-  if (text.trim().startsWith('star') || aria.startsWith('star')) return false;
-
-  // Heuristic: starred buttons often have a filled star or different styling
-  const svg = btn.querySelector('svg');
-  if (svg?.classList.contains('octicon-star-fill')) return true;
-  if (svg?.classList.contains('octicon-star')) return false;
-
-  // Fallback: check the form action
-  const form = btn.closest('form');
-  if (form) {
-    const action = form.getAttribute('action') ?? '';
-    if (action.includes('/unstar')) return true;
-    if (action.includes('/star')) return false;
-  }
-
-  return false;
-}
-
-function checkButton(btn: HTMLButtonElement) {
-  const nowStarred = isStarred(btn);
-
-  if (lastStarred === null) {
-    lastStarred = nowStarred;
-    return;
-  }
-
-  if (nowStarred !== lastStarred) {
-    lastStarred = nowStarred;
-    const action = nowStarred ? 'star' : 'unstar';
-    if (currentRepo) {
-      browser.runtime.sendMessage({
-        type: 'repoStarClicked',
-        payload: { owner: currentRepo.owner, repo: currentRepo.repo, action },
-      });
-    }
-  }
+function readButtonState(btn: HTMLButtonElement): boolean {
+  return btn.getAttribute('data-hydro-click')?.includes('UNSTAR_BUTTON') ?? false;
 }
 
 function parseRepoFromUrl(url: string) {
@@ -100,27 +64,57 @@ function parseRepoFromUrl(url: string) {
   return { owner: m[1], repo: m[2].replace(/\/$/, '') };
 }
 
+function onStarClick(event: Event) {
+  if (!currentRepo) return;
+  const btn = event.currentTarget as HTMLButtonElement;
+  const current = readButtonState(btn);
+
+  console.log('[stars] click | wasStarred:', wasStarred, '| current:', current, '| classList:', btn.className);
+
+  // current === true means the UNSTAR button was clicked; we only act on star actions
+  if (current) {
+    console.log('[stars] ignoring — unstar action');
+    return;
+  }
+
+  console.log('[stars] action: star | sending message');
+
+  browser.runtime.sendMessage({
+    type: 'repoStarClicked',
+    payload: {
+      owner: currentRepo.owner,
+      repo: currentRepo.repo,
+      action: 'star',
+    },
+  });
+}
+
+let clickListenerAttached = false;
+
 function watchButton(btn: HTMLButtonElement) {
-  if (buttonObserver) buttonObserver.disconnect();
-  buttonObserver = new MutationObserver(() => checkButton(btn));
-  buttonObserver.observe(btn, { attributes: true, childList: true, subtree: true });
-  checkButton(btn);
+  if (clickListenerAttached) return;
+  clickListenerAttached = true;
+  wasStarred = readButtonState(btn);
+  console.log('[stars] watchButton | wasStarred:', wasStarred, '| classList:', btn.className.split(' ').filter(c => c.startsWith('starred') || c.startsWith('Button')));
+  btn.addEventListener('click', onStarClick);
 }
 
 function initWatcher() {
-  if (buttonObserver) buttonObserver.disconnect();
   if (containerObserver) containerObserver.disconnect();
-  lastStarred = null;
+  clickListenerAttached = false;
   currentRepo = parseRepoFromUrl(location.href);
+
+  console.log('[stars] initWatcher | url:', location.href, '| currentRepo:', currentRepo);
 
   if (!currentRepo) return;
 
   const btn = findStarButton();
+  console.log('[stars] initWatcher | found button:', !!btn);
   if (btn) {
     watchButton(btn);
   }
 
-  // Watch the page heading container where the star button lives;
+  // Watch the container where the star button lives;
   // GitHub may replace it entirely during Turbo navigation.
   const container =
     document.querySelector('.starring-container, [data-testid="star-button-container"]') ??
@@ -129,7 +123,11 @@ function initWatcher() {
   if (container) {
     containerObserver = new MutationObserver(() => {
       const newBtn = findStarButton();
-      if (newBtn) watchButton(newBtn);
+      console.log('[stars] container mutated | found new btn:', !!newBtn);
+      if (newBtn) {
+        clickListenerAttached = false;
+        watchButton(newBtn);
+      }
     });
     containerObserver.observe(container, { childList: true, subtree: true });
   }
@@ -179,7 +177,7 @@ function showOverlay(payload: BackgroundMessage['payload']) {
       el.style.opacity = '1';
       break;
     case 'saved':
-      el.textContent = `\u2605 ${category || 'Categorized'}`;
+      el.textContent = `\u2605 ${category || 'Added to list'}`;
       el.style.color = '#4ade80';
       el.style.opacity = '1';
       setTimeout(() => {
@@ -195,7 +193,7 @@ function showOverlay(payload: BackgroundMessage['payload']) {
       }, 5000);
       break;
     case 'removed':
-      el.textContent = 'Unstarred \u2014 category removed';
+      el.textContent = 'Unstarred \u2014 removed';
       el.style.color = '#9ca3af';
       el.style.opacity = '1';
       setTimeout(() => {

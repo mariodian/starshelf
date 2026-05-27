@@ -25,7 +25,7 @@ export class OpenCodeClient implements AiProviderClient {
       : 'https://opencode.ai/zen/v1';
   }
 
-  async categorize(metadata: RepoMetadata, owner: string, repo: string): Promise<string> {
+  async categorize(metadata: RepoMetadata, owner: string, repo: string, existingLists: string[]): Promise<string> {
     const response = await fetch(`${this.baseUrl}/chat/completions`, {
       method: 'POST',
       headers: {
@@ -39,9 +39,9 @@ export class OpenCodeClient implements AiProviderClient {
             role: 'system',
             content: 'You categorize GitHub repositories. Respond with ONLY the category name, no explanation.',
           },
-          { role: 'user', content: buildPrompt(metadata, owner, repo) },
+          { role: 'user', content: buildPrompt(metadata, owner, repo, existingLists) },
         ],
-        max_tokens: 20,
+        max_tokens: 30,
         temperature: 0,
       }),
     });

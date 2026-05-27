@@ -66,6 +66,11 @@ function wire() {
     await storage.set('providers', settings.providers);
   });
 
+  el.listPrivacy.addEventListener('change', async () => {
+    settings.listPrivacy = el.listPrivacy.value as 'public' | 'private';
+    await storage.set('listPrivacy', settings.listPrivacy);
+  });
+
   el.fetchModels.addEventListener('click', async () => {
     const c = settings.providers.openai;
     if (!c.apiKey) {
@@ -124,6 +129,8 @@ function render() {
 
   el.fetchModels.style.display = p === 'openai' ? 'inline-block' : 'none';
   el.modelSelect.style.display = 'none';
+
+  el.listPrivacy.value = settings.listPrivacy;
 
   renderRepoList(el);
 }
@@ -223,6 +230,7 @@ function queryElements() {
     model: document.getElementById('model') as HTMLInputElement,
     fetchModels: document.getElementById('fetchModels') as HTMLButtonElement,
     modelSelect: document.getElementById('modelSelect') as HTMLSelectElement,
+    listPrivacy: document.getElementById('listPrivacy') as HTMLSelectElement,
     repoList: document.getElementById('repoList') as HTMLElement,
   };
 }

@@ -11,15 +11,15 @@
       <h1>Star Categorizer</h1>
 
       <section>
-        <h2>GitHub Token <span class="optional">(optional)</span></h2>
+        <h2>GitHub Token</h2>
         <p>
-          Used to verify star status and fetch repo metadata. Create a
+          Required to access star lists and verify repository status. Create a
           <a
-            href="https://github.com/settings/personal-access-tokens/new"
+            href="https://github.com/settings/tokens"
             target="_blank"
-            >fine-grained token</a
+            >classic personal access token</a
           >
-          with "Contents" and "Metadata" scopes.
+          with the <code>user</code> scope.
         </p>
         <div class="field">
           <input
@@ -74,6 +74,17 @@
 
         <div class="field">
           <select id="modelSelect" style="display: none"></select>
+        </div>
+      </section>
+
+      <section>
+        <h2>List Privacy</h2>
+        <div class="field">
+          <label for="listPrivacy">New lists</label>
+          <select id="listPrivacy">
+            <option value="private">Private</option>
+            <option value="public">Public</option>
+          </select>
         </div>
       </section>
 

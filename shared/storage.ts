@@ -7,6 +7,7 @@ export interface ExtensionSettings {
     opencode: { apiKey?: string; model?: string; endpoint: 'zen' | 'zen-go' };
   };
   categorizedRepos: Record<string, { category: string; starredAt: number }>;
+  listPrivacy: 'public' | 'private';
 }
 
 export interface StorageBackend {
@@ -55,6 +56,7 @@ export class ExtensionStorage {
         opencode: { endpoint: 'zen' },
       },
       categorizedRepos: {},
+      listPrivacy: 'private',
     };
     const keys = Object.keys(defaults) as (keyof ExtensionSettings)[];
     const result = await browser.storage.local.get(keys);
@@ -72,6 +74,7 @@ export class ExtensionStorage {
       ...current,
       activeProvider: partial.activeProvider ?? current.activeProvider,
       githubToken: partial.githubToken ?? current.githubToken,
+      listPrivacy: partial.listPrivacy ?? current.listPrivacy,
       providers: {
         anthropic: {
           apiKey: partial.providers?.anthropic?.apiKey ?? current.providers.anthropic.apiKey,

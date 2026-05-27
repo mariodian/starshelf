@@ -10,7 +10,7 @@ export class AnthropicClient implements AiProviderClient {
     private model: string,
   ) {}
 
-  async categorize(metadata: RepoMetadata, owner: string, repo: string): Promise<string> {
+  async categorize(metadata: RepoMetadata, owner: string, repo: string, existingLists: string[]): Promise<string> {
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
@@ -20,8 +20,8 @@ export class AnthropicClient implements AiProviderClient {
       },
       body: JSON.stringify({
         model: this.model,
-        max_tokens: 20,
-        messages: [{ role: 'user', content: buildPrompt(metadata, owner, repo) }],
+        max_tokens: 30,
+        messages: [{ role: 'user', content: buildPrompt(metadata, owner, repo, existingLists) }],
       }),
     });
 
