@@ -1,6 +1,6 @@
 import type { AiProviderClient } from './base';
 import type { RepoMetadata } from '../github';
-import { buildPrompt } from './base';
+import { buildPrompt, cleanCategory } from './base';
 
 // OpenCode Zen and Go use an OpenAI-compatible chat completions API.
 // Model IDs follow the pattern provider_id/model_id (e.g. opencode/gpt-5.1-codex).
@@ -37,11 +37,11 @@ export class OpenCodeClient implements AiProviderClient {
         messages: [
           {
             role: 'system',
-            content: 'You categorize GitHub repositories. Respond with ONLY the category name, no explanation.',
+            content: 'You are a GitHub repo classifier. Assign a category label using at most 2 nouns. No verbs, no articles, no explanation. Output only the label.',
           },
           { role: 'user', content: buildPrompt(metadata, owner, repo, existingLists) },
         ],
-        max_tokens: 200,
+        max_tokens: 4096,
         temperature: 0,
       }),
     });
@@ -55,14 +55,14 @@ export class OpenCodeClient implements AiProviderClient {
     const choice = data.choices?.[0];
 
     // Primary: use content field
-    const content = choice?.message?.content?.trim();
-    if (content) return content;
+    const content = choice?.message?.content;
+    if (content) return cleanCategory(content);
 
     // Fallback: reasoning models (e.g. DeepSeek) put output in reasoning_content
     const reasoning = choice?.message?.reasoning_content;
     if (reasoning) {
       const extracted = extractCategory(reasoning);
-      if (extracted) return extracted;
+      if (extracted) return cleanCategory(extracted);
     }
 
     throw new Error('OpenCode returned empty response');

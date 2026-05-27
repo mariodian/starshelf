@@ -1,6 +1,6 @@
 import type { AiProviderClient } from './base';
 import type { RepoMetadata } from '../github';
-import { buildPrompt } from './base';
+import { buildPrompt, cleanCategory } from './base';
 
 export class AnthropicClient implements AiProviderClient {
   readonly name = 'Anthropic';
@@ -20,7 +20,7 @@ export class AnthropicClient implements AiProviderClient {
       },
       body: JSON.stringify({
         model: this.model,
-        max_tokens: 30,
+        max_tokens: 4096,
         messages: [{ role: 'user', content: buildPrompt(metadata, owner, repo, existingLists) }],
       }),
     });
@@ -34,6 +34,6 @@ export class AnthropicClient implements AiProviderClient {
     if (!data.content?.[0]?.text) {
       throw new Error('Anthropic returned empty response');
     }
-    return data.content[0].text.trim();
+    return cleanCategory(data.content[0].text);
   }
 }

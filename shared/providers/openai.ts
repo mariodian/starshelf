@@ -1,6 +1,6 @@
 import type { AiProviderClient } from './base';
 import type { RepoMetadata } from '../github';
-import { buildPrompt } from './base';
+import { buildPrompt, cleanCategory } from './base';
 
 export class OpenAIClient implements AiProviderClient {
   readonly name = 'OpenAI';
@@ -22,11 +22,11 @@ export class OpenAIClient implements AiProviderClient {
         messages: [
           {
             role: 'system',
-            content: 'You categorize GitHub repositories. Respond with ONLY the category name, no explanation.',
+            content: 'You are a GitHub repo classifier. Assign a category label using at most 2 nouns. No verbs, no articles, no explanation. Output only the label.',
           },
           { role: 'user', content: buildPrompt(metadata, owner, repo, existingLists) },
         ],
-        max_tokens: 30,
+        max_tokens: 4096,
         temperature: 0,
       }),
     });
@@ -40,7 +40,7 @@ export class OpenAIClient implements AiProviderClient {
     if (!data.choices?.[0]?.message?.content) {
       throw new Error('OpenAI returned empty response');
     }
-    return data.choices[0].message.content.trim();
+    return cleanCategory(data.choices[0].message.content);
   }
 
   async listModels(): Promise<string[]> {
