@@ -3,6 +3,7 @@ import { storage, type ExtensionSettings } from '@/shared/storage';
 import {
   fetchRepoMetadata,
   isRepoPage,
+  type RepoMetadata,
 } from '@/shared/github';
 import {
   validateToken,
@@ -79,8 +80,11 @@ async function handleStarClick(
 
     // Validate token scope
     try {
+      console.log('[stars] bg | validating token...');
       await validateToken(token);
+      console.log('[stars] bg | token valid');
     } catch (err) {
+      console.error('[stars] bg | token validation FAILED:', err);
       const msg = err instanceof Error ? err.message : 'Token validation failed';
       await sendStatus(tabId, owner, repo, 'error', undefined, msg);
       return;
@@ -92,11 +96,31 @@ async function handleStarClick(
       return;
     }
 
-    // Fetch repo metadata and existing lists in parallel
-    const [metadata, lists] = await Promise.all([
-      fetchRepoMetadata(owner, repo, token),
-      getViewerLists(token),
-    ]);
+    // Fetch repo metadata
+    let metadata: RepoMetadata;
+    try {
+      console.log('[stars] bg | fetchRepoMetadata...');
+      metadata = await fetchRepoMetadata(owner, repo, token);
+      console.log('[stars] bg | metadata:', metadata.language, metadata.topics?.length, 'topics');
+    } catch (err) {
+      console.error('[stars] bg | fetchRepoMetadata FAILED:', err);
+      const msg = err instanceof Error ? err.message : 'fetchRepoMetadata failed';
+      await sendStatus(tabId, owner, repo, 'error', undefined, msg);
+      return;
+    }
+
+    // Get viewer lists
+    let lists: GitHubList[];
+    try {
+      console.log('[stars] bg | getViewerLists...');
+      lists = await getViewerLists(token);
+      console.log('[stars] bg | lists:', lists.length);
+    } catch (err) {
+      console.error('[stars] bg | getViewerLists FAILED:', err);
+      const msg = err instanceof Error ? err.message : 'getViewerLists failed';
+      await sendStatus(tabId, owner, repo, 'error', undefined, msg);
+      return;
+    }
 
     const client = buildClient(settings);
     if (!client) {
@@ -106,16 +130,37 @@ async function handleStarClick(
       return;
     }
 
-    // AI gets existing list names so it can choose one
+    // AI categorize
     const existingNames = lists.map((l) => l.name);
-    const category = await categorizeRepository(client, metadata, owner, repo, existingNames);
+    let category: string;
+    try {
+      console.log('[stars] bg | AI categorize | provider:', settings.activeProvider, '| model:', settings.providers[settings.activeProvider]?.model);
+      category = await categorizeRepository(client, metadata, owner, repo, existingNames);
+      console.log('[stars] bg | AI result:', category);
+    } catch (err) {
+      console.error('[stars] bg | AI categorize FAILED:', err);
+      const msg = err instanceof Error ? err.message : 'AI categorization failed';
+      await sendStatus(tabId, owner, repo, 'error', undefined, msg);
+      return;
+    }
 
     // Fuzzy-match category against existing lists
     const matchedList = fuzzyMatchListName(category, lists);
+    console.log('[stars] bg | fuzzy match:', matchedList ? matchedList.name : 'none');
 
     if (matchedList) {
-      const repoNodeId = await getRepoNodeId(owner, repo, token);
-      await updateUserListsForItem(repoNodeId, [matchedList.id], token);
+      try {
+        console.log('[stars] bg | getRepoNodeId...');
+        const repoNodeId = await getRepoNodeId(owner, repo, token);
+        console.log('[stars] bg | updateUserListsForItem...');
+        await updateUserListsForItem(repoNodeId, [matchedList.id], token);
+        console.log('[stars] bg | added to list:', matchedList.name);
+      } catch (err) {
+        console.error('[stars] bg | add to list FAILED:', err);
+        const msg = err instanceof Error ? err.message : 'Adding to list failed';
+        await sendStatus(tabId, owner, repo, 'error', undefined, msg);
+        return;
+      }
 
       const categorizedRepos = { ...settings.categorizedRepos };
       categorizedRepos[fullName] = { category: matchedList.name, starredAt: Date.now() };
@@ -123,11 +168,21 @@ async function handleStarClick(
 
       await sendStatus(tabId, owner, repo, 'saved', matchedList.name);
     } else {
-      const isPrivate = settings.listPrivacy === 'private';
-      const newList = await createUserList(category, isPrivate, token);
-
-      const repoNodeId = await getRepoNodeId(owner, repo, token);
-      await updateUserListsForItem(repoNodeId, [newList.id], token);
+      try {
+        const isPrivate = settings.listPrivacy === 'private';
+        console.log('[stars] bg | createUserList:', category);
+        const newList = await createUserList(category, isPrivate, token);
+        console.log('[stars] bg | getRepoNodeId...');
+        const repoNodeId = await getRepoNodeId(owner, repo, token);
+        console.log('[stars] bg | updateUserListsForItem...');
+        await updateUserListsForItem(repoNodeId, [newList.id], token);
+        console.log('[stars] bg | created+added to list:', newList.name);
+      } catch (err) {
+        console.error('[stars] bg | create list FAILED:', err);
+        const msg = err instanceof Error ? err.message : 'Creating list failed';
+        await sendStatus(tabId, owner, repo, 'error', undefined, msg);
+        return;
+      }
 
       const categorizedRepos = { ...settings.categorizedRepos };
       categorizedRepos[fullName] = { category, starredAt: Date.now() };

@@ -41,7 +41,7 @@ export class OpenCodeClient implements AiProviderClient {
           },
           { role: 'user', content: buildPrompt(metadata, owner, repo, existingLists) },
         ],
-        max_tokens: 30,
+        max_tokens: 200,
         temperature: 0,
       }),
     });
@@ -52,9 +52,41 @@ export class OpenCodeClient implements AiProviderClient {
     }
 
     const data = await response.json();
-    if (!data.choices?.[0]?.message?.content) {
-      throw new Error('OpenCode returned empty response');
+    const choice = data.choices?.[0];
+
+    // Primary: use content field
+    const content = choice?.message?.content?.trim();
+    if (content) return content;
+
+    // Fallback: reasoning models (e.g. DeepSeek) put output in reasoning_content
+    const reasoning = choice?.message?.reasoning_content;
+    if (reasoning) {
+      const extracted = extractCategory(reasoning);
+      if (extracted) return extracted;
     }
-    return data.choices[0].message.content.trim();
+
+    throw new Error('OpenCode returned empty response');
   }
+}
+
+function extractCategory(text: string): string | null {
+  // Try explicit category declarations in the reasoning
+  for (const re of [
+    /category(?:\s+is)?[:\s]+["']?([\w\s-]+?)["']?(?:\.|$)/im,
+    /(?:would be|should be|is)\s+["']?([\w\s-]+?)["']?(?:\.|$)/im,
+    /classified\s+as\s+["']?([\w\s-]+?)["']?(?:\.|$)/im,
+    /["']([\w\s-]{2,30})["']/g,
+  ]) {
+    const m = text.match(re);
+    if (m?.[1]?.trim()) return m[1].trim();
+  }
+
+  // Last line as fallback
+  const lines = text.split('\n').filter((l) => l.trim());
+  const last = lines[lines.length - 1]?.trim();
+  if (last && last.length <= 40) {
+    return last.replace(/[^\w\s-]/g, '').trim();
+  }
+
+  return null;
 }

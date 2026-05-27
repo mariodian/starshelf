@@ -145,9 +145,7 @@ export async function updateUserListsForItem(
     token,
     `mutation($input: UpdateUserListsForItemInput!) {
       updateUserListsForItem(input: $input) {
-        item {
-          id
-        }
+        clientMutationId
       }
     }`,
     { input: { itemId, listIds } },

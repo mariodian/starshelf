@@ -13,13 +13,13 @@
       <section>
         <h2>GitHub Token</h2>
         <p>
-          Required to access star lists and verify repository status. Create a
+          Create a
           <a
-            href="https://github.com/settings/tokens"
+            href="https://github.com/settings/tokens/new"
             target="_blank"
             >classic personal access token</a
           >
-          with the <code>user</code> scope.
+          with the <code>user</code> scope. Fine-grained tokens are not supported.
         </p>
         <div class="field">
           <input
@@ -31,6 +31,7 @@
           <button id="saveGithubToken">Save</button>
           <button id="deleteGithubToken" class="danger">Delete</button>
         </div>
+        <p class="hint">Only classic tokens with <code>user</code> scope work. Fine-grained PATs lack the required star-list API access.</p>
       </section>
 
       <section>

@@ -149,6 +149,20 @@ button.small { padding: 3px 8px; font-size: 11px; }
   background: #da3633;
 }
 
+.hint {
+  color: #6e7681;
+  font-size: 11px;
+  margin: 4px 0 0;
+}
+
+code {
+  background: #0d1117;
+  border: 1px solid #30363d;
+  border-radius: 3px;
+  padding: 1px 4px;
+  font-size: 11px;
+}
+
 #modelSelect {
   width: 100%;
 }

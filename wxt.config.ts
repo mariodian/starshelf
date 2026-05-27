@@ -20,7 +20,13 @@ export default defineConfig({
     // Set WXT_DEV_EXTENSION_KEY env var to override the built-in default.
     key: isDev ? process.env.WXT_DEV_EXTENSION_KEY : undefined,
     permissions: ["storage", "activeTab"],
-    host_permissions: ["https://github.com/*"],
+    host_permissions: [
+      "https://github.com/*",
+      "https://api.github.com/*",
+      "https://api.anthropic.com/*",
+      "https://api.openai.com/*",
+      "https://opencode.ai/*",
+    ],
     action: {},
     background: {
       service_worker: "background.ts",
