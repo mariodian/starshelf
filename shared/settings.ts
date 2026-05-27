@@ -1,6 +1,8 @@
 import { storage } from '@/shared/storage';
 import type { ExtensionSettings } from '@/shared/storage';
 import { OpenAIClient } from '@/shared/providers/openai';
+import { AnthropicClient } from '@/shared/providers/anthropic';
+import { OpenCodeClient } from '@/shared/providers/opencode';
 
 let settings: ExtensionSettings;
 
@@ -32,6 +34,7 @@ function wire() {
   el.aiProvider.addEventListener('change', async () => {
     settings.activeProvider = el.aiProvider.value as ExtensionSettings['activeProvider'];
     await storage.set('activeProvider', settings.activeProvider);
+    el.modelSelect.innerHTML = '';
     render();
   });
 
@@ -58,11 +61,17 @@ function wire() {
         endpoint: el.openCodeEndpoint.value as 'zen' | 'zen-go',
       };
       await storage.set('providers', settings.providers);
+      if (settings.providerModels) {
+        delete settings.providerModels.opencode;
+        await storage.set('providerModels', settings.providerModels);
+      }
+      el.modelSelect.innerHTML = '';
+      render();
     }
   });
 
-  el.model.addEventListener('change', async () => {
-    setProviderConfig(settings.activeProvider, { model: el.model.value || undefined });
+  el.modelSelect.addEventListener('change', async () => {
+    setProviderConfig(settings.activeProvider, { model: el.modelSelect.value || undefined });
     await storage.set('providers', settings.providers);
   });
 
@@ -72,9 +81,10 @@ function wire() {
   });
 
   el.fetchModels.addEventListener('click', async () => {
-    const c = settings.providers.openai;
+    const p = settings.activeProvider;
+    const c = settings.providers[p];
     if (!c.apiKey) {
-      flash('Enter an OpenAI API key first', true);
+      flash('Enter an API key first', true);
       return;
     }
 
@@ -82,8 +92,10 @@ function wire() {
     el.fetchModels.textContent = 'Fetching...';
 
     try {
-      const client = new OpenAIClient(c.apiKey, c.model ?? 'gpt-4o');
+      const client = buildFetchClient(p);
+      if (!client) throw new Error('Unknown provider');
       const models = await client.listModels();
+      const saved = c.model;
       el.modelSelect.innerHTML = '';
       for (const id of models) {
         const opt = document.createElement('option');
@@ -91,21 +103,16 @@ function wire() {
         opt.textContent = id;
         el.modelSelect.appendChild(opt);
       }
-      el.modelSelect.style.display = 'block';
-
-      el.modelSelect.addEventListener('change', () => {
-        settings.providers.openai = {
-          ...settings.providers.openai,
-          model: el.modelSelect.value,
-        };
-        el.model.value = el.modelSelect.value;
-        storage.set('providers', settings.providers);
-      });
+      if (saved && models.includes(saved)) {
+        el.modelSelect.value = saved;
+      }
+      settings.providerModels = { ...settings.providerModels, [p]: models };
+      await storage.set('providerModels', settings.providerModels);
     } catch (err) {
       flash(`Failed: ${err instanceof Error ? err.message : 'Unknown error'}`, true);
     } finally {
       el.fetchModels.disabled = false;
-      el.fetchModels.textContent = 'Fetch Models';
+      el.fetchModels.textContent = 'Fetch';
     }
   });
 }
@@ -120,15 +127,36 @@ function render() {
   const c = settings.providers[p];
 
   el.apiKey.value = c.apiKey ? '\u2022'.repeat(12) : '';
-  el.model.value = c.model ?? '';
+
+  const cached = settings.providerModels?.[p];
+  if (cached && cached.length > 0) {
+    el.modelSelect.innerHTML = '';
+    for (const id of cached) {
+      const opt = document.createElement('option');
+      opt.value = id;
+      opt.textContent = id;
+      el.modelSelect.appendChild(opt);
+    }
+    if (c.model && cached.includes(c.model)) {
+      el.modelSelect.value = c.model;
+    }
+  } else if (c.model) {
+    const existing = Array.from(el.modelSelect.options).map((o) => o.value);
+    if (!existing.includes(c.model)) {
+      const opt = document.createElement('option');
+      opt.value = c.model;
+      opt.textContent = c.model;
+      el.modelSelect.appendChild(opt);
+    }
+    el.modelSelect.value = c.model;
+  }
 
   el.openCodeEndpointField.style.display = p === 'opencode' ? 'flex' : 'none';
   if (p === 'opencode') {
     el.openCodeEndpoint.value = settings.providers.opencode.endpoint;
   }
 
-  el.fetchModels.style.display = p === 'openai' ? 'inline-block' : 'none';
-  el.modelSelect.style.display = 'none';
+  el.fetchModels.style.display = 'inline-block';
 
   el.listPrivacy.value = settings.listPrivacy;
 }
@@ -147,6 +175,27 @@ function setProviderConfig(
     case 'opencode':
       settings.providers.opencode = { ...settings.providers.opencode, ...update };
       break;
+  }
+}
+
+function buildFetchClient(provider: ExtensionSettings['activeProvider']) {
+  switch (provider) {
+    case 'openai':
+      return new OpenAIClient(
+        settings.providers.openai.apiKey!,
+        settings.providers.openai.model ?? 'gpt-4o',
+      );
+    case 'anthropic':
+      return new AnthropicClient(
+        settings.providers.anthropic.apiKey!,
+        settings.providers.anthropic.model ?? 'claude-sonnet-4-20250514',
+      );
+    case 'opencode':
+      return new OpenCodeClient(
+        settings.providers.opencode.apiKey!,
+        settings.providers.opencode.model ?? 'gpt-4o',
+        settings.providers.opencode.endpoint,
+      );
   }
 }
 
@@ -187,7 +236,6 @@ function queryElements() {
     deleteApiKey: document.getElementById('deleteApiKey') as HTMLButtonElement,
     openCodeEndpointField: document.getElementById('openCodeEndpointField') as HTMLElement,
     openCodeEndpoint: document.getElementById('openCodeEndpoint') as HTMLSelectElement,
-    model: document.getElementById('model') as HTMLInputElement,
     fetchModels: document.getElementById('fetchModels') as HTMLButtonElement,
     modelSelect: document.getElementById('modelSelect') as HTMLSelectElement,
     listPrivacy: document.getElementById('listPrivacy') as HTMLSelectElement,

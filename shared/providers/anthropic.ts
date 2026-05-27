@@ -10,6 +10,24 @@ export class AnthropicClient implements AiProviderClient {
     private model: string,
   ) {}
 
+  async listModels(): Promise<string[]> {
+    const response = await fetch('https://api.anthropic.com/v1/models', {
+      headers: {
+        'x-api-key': this.apiKey,
+        'anthropic-version': '2023-06-01',
+      },
+    });
+    if (!response.ok) return [];
+
+    const data = await response.json();
+    if (!Array.isArray(data.data)) return [];
+
+    return data.data
+      .map((m: { id: string }) => m.id)
+      .filter((id: string) => id.startsWith('claude-'))
+      .sort();
+  }
+
   async categorize(metadata: RepoMetadata, owner: string, repo: string, existingLists: string[]): Promise<string> {
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',

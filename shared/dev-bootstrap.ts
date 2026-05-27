@@ -12,6 +12,11 @@ function readEnvSettings(): Partial<ExtensionSettings> {
     partial.activeProvider = activeProvider;
   }
 
+  const listPrivacy = import.meta.env.VITE_LIST_PRIVACY;
+  if (listPrivacy === 'public' || listPrivacy === 'private') {
+    partial.listPrivacy = listPrivacy;
+  }
+
   const providers: Partial<ExtensionSettings['providers']> = {};
 
   const anthropicKey = import.meta.env.VITE_ANTHROPIC_API_KEY;

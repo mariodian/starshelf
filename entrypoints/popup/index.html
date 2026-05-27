@@ -18,7 +18,7 @@
             >classic personal access token</a
           >
           with the <code>user</code>, <code>public_repo</code> and
-          <code>gist</code> scope. Fine-grained tokens are not supported.
+          <code>gist</code> scope.
         </p>
         <div class="field">
           <input
@@ -31,8 +31,8 @@
           <button id="deleteGithubToken" class="danger">Delete</button>
         </div>
         <p class="hint">
-          Only classic tokens with <code>user</code> scope work. Fine-grained
-          PATs lack the required star-list API access.
+          Only classic tokens work. Fine-grained PATs lack the required
+          star-list API access.
         </p>
       </section>
 
@@ -66,17 +66,9 @@
         </div>
 
         <div class="field">
-          <label for="model">Model</label>
-          <input
-            type="text"
-            id="model"
-            placeholder="e.g. claude-sonnet-4-20250514"
-          />
-          <button id="fetchModels" style="display: none">Fetch</button>
-        </div>
-
-        <div class="field">
-          <select id="modelSelect" style="display: none"></select>
+          <label for="modelSelect">Model</label>
+          <select id="modelSelect"></select>
+          <button id="fetchModels">Fetch</button>
         </div>
       </section>
 

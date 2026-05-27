@@ -1,33 +1,41 @@
-import type { AiProviderClient } from './base';
-import type { RepoMetadata } from '../github';
-import { buildPrompt, cleanCategory } from './base';
+import type { AiProviderClient } from "./base";
+import type { RepoMetadata } from "../github";
+import { buildPrompt, cleanCategory } from "./base";
 
 export class OpenAIClient implements AiProviderClient {
-  readonly name = 'OpenAI';
+  readonly name = "OpenAI";
 
   constructor(
     private apiKey: string,
     private model: string,
   ) {}
 
-  async categorize(metadata: RepoMetadata, owner: string, repo: string, existingLists: string[]): Promise<string> {
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
+  async categorize(
+    metadata: RepoMetadata,
+    owner: string,
+    repo: string,
+    existingLists: string[],
+  ): Promise<string> {
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
       headers: {
-        'Content-Type': 'application/json',
+        "Content-Type": "application/json",
         Authorization: `Bearer ${this.apiKey}`,
       },
       body: JSON.stringify({
         model: this.model,
         messages: [
           {
-            role: 'system',
-            content: 'You are a GitHub repo classifier. Assign a category label using at most 2 nouns. No verbs, no articles, no explanation. Output only the label.',
+            role: "system",
+            content:
+              "You are a GitHub repo classifier. Assign a category label using at most 2 nouns. No verbs, no articles, no explanation. Output only the label.",
           },
-          { role: 'user', content: buildPrompt(metadata, owner, repo, existingLists) },
+          {
+            role: "user",
+            content: buildPrompt(metadata, owner, repo, existingLists),
+          },
         ],
-        max_tokens: 4096,
-        temperature: 0,
+        max_completion_tokens: 4096,
       }),
     });
 
@@ -38,13 +46,13 @@ export class OpenAIClient implements AiProviderClient {
 
     const data = await response.json();
     if (!data.choices?.[0]?.message?.content) {
-      throw new Error('OpenAI returned empty response');
+      throw new Error("OpenAI returned empty response");
     }
     return cleanCategory(data.choices[0].message.content);
   }
 
   async listModels(): Promise<string[]> {
-    const response = await fetch('https://api.openai.com/v1/models', {
+    const response = await fetch("https://api.openai.com/v1/models", {
       headers: { Authorization: `Bearer ${this.apiKey}` },
     });
     if (!response.ok) return [];
@@ -56,7 +64,7 @@ export class OpenAIClient implements AiProviderClient {
       .map((m: { id: string }) => m.id)
       .filter(
         (id: string) =>
-          id.startsWith('gpt') || id.startsWith('o1') || id.startsWith('o3'),
+          id.startsWith("gpt") || id.startsWith("o1") || id.startsWith("o3"),
       )
       .sort();
   }

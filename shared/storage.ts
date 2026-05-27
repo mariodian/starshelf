@@ -7,6 +7,7 @@ export interface ExtensionSettings {
     opencode: { apiKey?: string; model?: string; endpoint: 'zen' | 'zen-go' };
   };
   listPrivacy: 'public' | 'private';
+  providerModels?: Record<string, string[]>;
 }
 
 export interface StorageBackend {
@@ -55,10 +56,17 @@ export class ExtensionStorage {
         opencode: { endpoint: 'zen' },
       },
       listPrivacy: 'private',
+      providerModels: {},
     };
     const keys = Object.keys(defaults) as (keyof ExtensionSettings)[];
     const result = await browser.storage.local.get(keys);
-    return { ...defaults, ...result } as ExtensionSettings;
+    const settings = { ...defaults, ...result } as ExtensionSettings;
+
+    if (import.meta.env.DEV) {
+      applyEnvOverrides(settings);
+    }
+
+    return settings;
   }
 
   async setSettings(settings: ExtensionSettings): Promise<void> {
@@ -91,6 +99,42 @@ export class ExtensionStorage {
     };
 
     await this.setSettings(merged);
+  }
+}
+
+function applyEnvOverrides(settings: ExtensionSettings): void {
+  const activeProvider = import.meta.env.VITE_ACTIVE_PROVIDER;
+  if (activeProvider === 'anthropic' || activeProvider === 'openai' || activeProvider === 'opencode') {
+    settings.activeProvider = activeProvider;
+  }
+
+  const githubToken = import.meta.env.VITE_GITHUB_TOKEN;
+  if (githubToken) {
+    settings.githubToken = githubToken;
+  }
+
+  const listPrivacy = import.meta.env.VITE_LIST_PRIVACY;
+  if (listPrivacy === 'public' || listPrivacy === 'private') {
+    settings.listPrivacy = listPrivacy;
+  }
+
+  const anthropicKey = import.meta.env.VITE_ANTHROPIC_API_KEY;
+  const anthropicModel = import.meta.env.VITE_ANTHROPIC_MODEL;
+  if (anthropicKey) settings.providers.anthropic.apiKey = anthropicKey;
+  if (anthropicModel) settings.providers.anthropic.model = anthropicModel;
+
+  const openaiKey = import.meta.env.VITE_OPENAI_API_KEY;
+  const openaiModel = import.meta.env.VITE_OPENAI_MODEL;
+  if (openaiKey) settings.providers.openai.apiKey = openaiKey;
+  if (openaiModel) settings.providers.openai.model = openaiModel;
+
+  const opencodeKey = import.meta.env.VITE_OPENCODE_API_KEY;
+  const opencodeModel = import.meta.env.VITE_OPENCODE_MODEL;
+  const opencodeEndpoint = import.meta.env.VITE_OPENCODE_ENDPOINT;
+  if (opencodeKey) settings.providers.opencode.apiKey = opencodeKey;
+  if (opencodeModel) settings.providers.opencode.model = opencodeModel;
+  if (opencodeEndpoint === 'zen' || opencodeEndpoint === 'zen-go') {
+    settings.providers.opencode.endpoint = opencodeEndpoint;
   }
 }
 

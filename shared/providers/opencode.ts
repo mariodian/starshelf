@@ -25,6 +25,20 @@ export class OpenCodeClient implements AiProviderClient {
       : 'https://opencode.ai/zen/v1';
   }
 
+  async listModels(): Promise<string[]> {
+    const response = await fetch(`${this.baseUrl}/models`, {
+      headers: { Authorization: `Bearer ${this.apiKey}` },
+    });
+    if (!response.ok) return [];
+
+    const data = await response.json();
+    if (!Array.isArray(data.data)) return [];
+
+    return data.data
+      .map((m: { id: string }) => m.id)
+      .sort();
+  }
+
   async categorize(metadata: RepoMetadata, owner: string, repo: string, existingLists: string[]): Promise<string> {
     const response = await fetch(`${this.baseUrl}/chat/completions`, {
       method: 'POST',
