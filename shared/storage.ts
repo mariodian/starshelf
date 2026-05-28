@@ -1,12 +1,12 @@
 export interface ExtensionSettings {
   githubToken?: string;
-  activeProvider: 'anthropic' | 'openai' | 'opencode';
+  activeProvider: "anthropic" | "openai" | "opencode";
   providers: {
     anthropic: { apiKey?: string; model?: string };
     openai: { apiKey?: string; model?: string };
-    opencode: { apiKey?: string; model?: string; endpoint: 'zen' | 'zen-go' };
+    opencode: { apiKey?: string; model?: string; endpoint: "zen" | "zen-go" };
   };
-  listPrivacy: 'public' | 'private';
+  listPrivacy: "public" | "private";
   providerModels?: Record<string, string[]>;
 }
 
@@ -48,14 +48,14 @@ export class ExtensionStorage {
 
   async getSettings(): Promise<ExtensionSettings> {
     const defaults: ExtensionSettings = {
-      activeProvider: 'anthropic',
+      activeProvider: "anthropic",
       githubToken: undefined,
       providers: {
         anthropic: {},
         openai: {},
-        opencode: { endpoint: 'zen' },
+        opencode: { endpoint: "zen" },
       },
-      listPrivacy: 'private',
+      listPrivacy: "private",
       providerModels: {},
     };
     const keys = Object.keys(defaults) as (keyof ExtensionSettings)[];
@@ -83,17 +83,31 @@ export class ExtensionStorage {
       listPrivacy: partial.listPrivacy ?? current.listPrivacy,
       providers: {
         anthropic: {
-          apiKey: partial.providers?.anthropic?.apiKey ?? current.providers.anthropic.apiKey,
-          model: partial.providers?.anthropic?.model ?? current.providers.anthropic.model,
+          apiKey:
+            partial.providers?.anthropic?.apiKey ??
+            current.providers.anthropic.apiKey,
+          model:
+            partial.providers?.anthropic?.model ??
+            current.providers.anthropic.model,
         },
         openai: {
-          apiKey: partial.providers?.openai?.apiKey ?? current.providers.openai.apiKey,
-          model: partial.providers?.openai?.model ?? current.providers.openai.model,
+          apiKey:
+            partial.providers?.openai?.apiKey ??
+            current.providers.openai.apiKey,
+          model:
+            partial.providers?.openai?.model ?? current.providers.openai.model,
         },
         opencode: {
-          apiKey: partial.providers?.opencode?.apiKey ?? current.providers.opencode.apiKey,
-          model: partial.providers?.opencode?.model ?? current.providers.opencode.model,
-          endpoint: partial.providers?.opencode?.endpoint ?? current.providers.opencode.endpoint ?? 'zen',
+          apiKey:
+            partial.providers?.opencode?.apiKey ??
+            current.providers.opencode.apiKey,
+          model:
+            partial.providers?.opencode?.model ??
+            current.providers.opencode.model,
+          endpoint:
+            partial.providers?.opencode?.endpoint ??
+            current.providers.opencode.endpoint ??
+            "zen",
         },
       },
     };
@@ -104,7 +118,11 @@ export class ExtensionStorage {
 
 function applyEnvOverrides(settings: ExtensionSettings): void {
   const activeProvider = import.meta.env.VITE_ACTIVE_PROVIDER;
-  if (activeProvider === 'anthropic' || activeProvider === 'openai' || activeProvider === 'opencode') {
+  if (
+    activeProvider === "anthropic" ||
+    activeProvider === "openai" ||
+    activeProvider === "opencode"
+  ) {
     settings.activeProvider = activeProvider;
   }
 
@@ -114,7 +132,7 @@ function applyEnvOverrides(settings: ExtensionSettings): void {
   }
 
   const listPrivacy = import.meta.env.VITE_LIST_PRIVACY;
-  if (listPrivacy === 'public' || listPrivacy === 'private') {
+  if (listPrivacy === "public" || listPrivacy === "private") {
     settings.listPrivacy = listPrivacy;
   }
 
@@ -133,7 +151,7 @@ function applyEnvOverrides(settings: ExtensionSettings): void {
   const opencodeEndpoint = import.meta.env.VITE_OPENCODE_ENDPOINT;
   if (opencodeKey) settings.providers.opencode.apiKey = opencodeKey;
   if (opencodeModel) settings.providers.opencode.model = opencodeModel;
-  if (opencodeEndpoint === 'zen' || opencodeEndpoint === 'zen-go') {
+  if (opencodeEndpoint === "zen" || opencodeEndpoint === "zen-go") {
     settings.providers.opencode.endpoint = opencodeEndpoint;
   }
 }

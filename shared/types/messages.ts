@@ -1,20 +1,20 @@
 // Messages sent from content script to background
 export interface RepoStarClickedMessage {
-  type: 'repoStarClicked';
+  type: "repoStarClicked";
   payload: {
     owner: string;
     repo: string;
-    action: 'star' | 'unstar';
+    action: "star" | "unstar";
   };
 }
 
 // Messages sent from background to content script
 export interface UpdateStarStatusMessage {
-  type: 'updateStarStatus';
+  type: "updateStarStatus";
   payload: {
     owner: string;
     repo: string;
-    status: 'categorizing' | 'saved' | 'error' | 'removed';
+    status: "categorizing" | "saved" | "error" | "removed";
     category?: string;
     error?: string;
   };

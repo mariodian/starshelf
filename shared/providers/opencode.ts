@@ -1,6 +1,6 @@
-import type { AiProviderClient } from './base';
-import type { RepoMetadata } from '../github';
-import { buildPrompt, cleanCategory } from './base';
+import type { AiProviderClient } from "./base";
+import type { RepoMetadata } from "../github";
+import { buildPrompt, cleanCategory } from "./base";
 
 // OpenCode Zen and Go use an OpenAI-compatible chat completions API.
 // Model IDs follow the pattern provider_id/model_id (e.g. opencode/gpt-5.1-codex).
@@ -11,18 +11,18 @@ import { buildPrompt, cleanCategory } from './base';
 // For those, configure the model manually and switch the endpoint in settings.
 
 export class OpenCodeClient implements AiProviderClient {
-  readonly name = 'OpenCode';
+  readonly name = "OpenCode";
 
   constructor(
     private apiKey: string,
     private model: string,
-    private endpoint: 'zen' | 'zen-go' = 'zen',
+    private endpoint: "zen" | "zen-go" = "zen",
   ) {}
 
   get baseUrl(): string {
-    return this.endpoint === 'zen-go'
-      ? 'https://opencode.ai/zen/go/v1'
-      : 'https://opencode.ai/zen/v1';
+    return this.endpoint === "zen-go"
+      ? "https://opencode.ai/zen/go/v1"
+      : "https://opencode.ai/zen/v1";
   }
 
   async listModels(): Promise<string[]> {
@@ -34,26 +34,33 @@ export class OpenCodeClient implements AiProviderClient {
     const data = await response.json();
     if (!Array.isArray(data.data)) return [];
 
-    return data.data
-      .map((m: { id: string }) => m.id)
-      .sort();
+    return data.data.map((m: { id: string }) => m.id).sort();
   }
 
-  async categorize(metadata: RepoMetadata, owner: string, repo: string, existingLists: string[]): Promise<string> {
+  async categorize(
+    metadata: RepoMetadata,
+    owner: string,
+    repo: string,
+    existingLists: string[],
+  ): Promise<string> {
     const response = await fetch(`${this.baseUrl}/chat/completions`, {
-      method: 'POST',
+      method: "POST",
       headers: {
-        'Content-Type': 'application/json',
+        "Content-Type": "application/json",
         Authorization: `Bearer ${this.apiKey}`,
       },
       body: JSON.stringify({
         model: this.model,
         messages: [
           {
-            role: 'system',
-            content: 'You are a GitHub repo classifier. Assign a category label using at most 2 nouns. No verbs, no articles, no explanation. Output only the label.',
+            role: "system",
+            content:
+              "You are a GitHub repo classifier. Assign a category label using at most 2 nouns. No verbs, no articles, no explanation. Output only the label.",
           },
-          { role: 'user', content: buildPrompt(metadata, owner, repo, existingLists) },
+          {
+            role: "user",
+            content: buildPrompt(metadata, owner, repo, existingLists),
+          },
         ],
         max_tokens: 4096,
         temperature: 0,
@@ -79,7 +86,7 @@ export class OpenCodeClient implements AiProviderClient {
       if (extracted) return cleanCategory(extracted);
     }
 
-    throw new Error('OpenCode returned empty response');
+    throw new Error("OpenCode returned empty response");
   }
 }
 
@@ -96,10 +103,10 @@ function extractCategory(text: string): string | null {
   }
 
   // Last line as fallback
-  const lines = text.split('\n').filter((l) => l.trim());
+  const lines = text.split("\n").filter((l) => l.trim());
   const last = lines[lines.length - 1]?.trim();
   if (last && last.length <= 40) {
-    return last.replace(/[^\w\s-]/g, '').trim();
+    return last.replace(/[^\w\s-]/g, "").trim();
   }
 
   return null;

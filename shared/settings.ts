@@ -1,11 +1,11 @@
-import { storage } from '@/shared/storage';
-import type { ExtensionSettings } from '@/shared/storage';
-import { OpenAIClient } from '@/shared/providers/openai';
-import { AnthropicClient } from '@/shared/providers/anthropic';
-import { OpenCodeClient } from '@/shared/providers/opencode';
+import { storage } from "@/shared/storage";
+import type { ExtensionSettings } from "@/shared/storage";
+import { OpenAIClient } from "@/shared/providers/openai";
+import { AnthropicClient } from "@/shared/providers/anthropic";
+import { OpenCodeClient } from "@/shared/providers/opencode";
 
 let settings: ExtensionSettings;
-const DIRTY_MASK = '\u2022'.repeat(12);
+const DIRTY_MASK = "\u2022".repeat(12);
 let isRendering = false;
 const debounceTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
@@ -37,102 +37,105 @@ function clearDebounce(key: string) {
 function wire() {
   const el = getElements();
 
-  el.deleteGithubToken.addEventListener('click', async () => {
+  el.deleteGithubToken.addEventListener("click", async () => {
     settings.githubToken = undefined;
-    await storage.remove('githubToken');
-    el.githubToken.value = '';
-    flash('GitHub token deleted');
+    await storage.remove("githubToken");
+    el.githubToken.value = "";
+    flash("GitHub token deleted");
   });
 
-  el.deleteApiKey.addEventListener('click', async () => {
+  el.deleteApiKey.addEventListener("click", async () => {
     setProviderConfig(settings.activeProvider, { apiKey: undefined });
-    await storage.set('providers', settings.providers);
-    el.apiKey.value = '';
-    flash('API key deleted');
+    await storage.set("providers", settings.providers);
+    el.apiKey.value = "";
+    flash("API key deleted");
   });
 
-  el.aiProvider.addEventListener('change', () => {
+  el.aiProvider.addEventListener("change", () => {
     if (isRendering) return;
-    settings.activeProvider = el.aiProvider.value as ExtensionSettings['activeProvider'];
-    storage.set('activeProvider', settings.activeProvider);
-    clearDebounce('apiKey');
-    clearDebounce('endpoint');
-    clearDebounce('model');
-    el.modelSelect.innerHTML = '';
+    settings.activeProvider = el.aiProvider
+      .value as ExtensionSettings["activeProvider"];
+    storage.set("activeProvider", settings.activeProvider);
+    clearDebounce("apiKey");
+    clearDebounce("endpoint");
+    clearDebounce("model");
+    el.modelSelect.innerHTML = "";
     render();
-    flash('Provider saved');
+    flash("Provider saved");
   });
 
-  el.openCodeEndpoint.addEventListener('change', () => {
+  el.openCodeEndpoint.addEventListener("change", () => {
     if (isRendering) return;
     settings.providers.opencode = {
       ...settings.providers.opencode,
-      endpoint: el.openCodeEndpoint.value as 'zen' | 'zen-go',
+      endpoint: el.openCodeEndpoint.value as "zen" | "zen-go",
     };
-    storage.set('providers', settings.providers);
+    storage.set("providers", settings.providers);
     if (settings.providerModels) {
       delete settings.providerModels.opencode;
-      storage.set('providerModels', settings.providerModels);
+      storage.set("providerModels", settings.providerModels);
     }
-    el.modelSelect.innerHTML = '';
-    flash('Endpoint saved');
+    el.modelSelect.innerHTML = "";
+    flash("Endpoint saved");
   });
 
-  el.modelSelect.addEventListener('change', () => {
+  el.modelSelect.addEventListener("change", () => {
     if (isRendering) return;
-    setProviderConfig(settings.activeProvider, { model: el.modelSelect.value || undefined });
-    storage.set('providers', settings.providers);
-    flash('Model saved');
+    setProviderConfig(settings.activeProvider, {
+      model: el.modelSelect.value || undefined,
+    });
+    storage.set("providers", settings.providers);
+    flash("Model saved");
   });
 
-  el.listPrivacy.addEventListener('change', () => {
+  el.listPrivacy.addEventListener("change", () => {
     if (isRendering) return;
-    settings.listPrivacy = el.listPrivacy.value as 'public' | 'private';
-    storage.set('listPrivacy', settings.listPrivacy);
-    flash('Privacy saved');
+    settings.listPrivacy = el.listPrivacy.value as "public" | "private";
+    storage.set("listPrivacy", settings.listPrivacy);
+    flash("Privacy saved");
   });
 
-  el.githubToken.addEventListener('blur', () => {
+  el.githubToken.addEventListener("blur", () => {
     if (isRendering) return;
-    clearDebounce('githubToken');
+    clearDebounce("githubToken");
     saveGithubToken();
   });
 
-  el.githubToken.addEventListener('input', () => {
+  el.githubToken.addEventListener("input", () => {
     if (isRendering) return;
-    debounce('githubToken', () => saveGithubToken());
+    debounce("githubToken", () => saveGithubToken());
   });
 
-  el.apiKey.addEventListener('blur', () => {
+  el.apiKey.addEventListener("blur", () => {
     if (isRendering) return;
-    clearDebounce('apiKey');
+    clearDebounce("apiKey");
     saveApiKey();
   });
 
-  el.apiKey.addEventListener('input', () => {
+  el.apiKey.addEventListener("input", () => {
     if (isRendering) return;
-    debounce('apiKey', () => saveApiKey());
+    debounce("apiKey", () => saveApiKey());
   });
 
-  el.fetchModels.addEventListener('click', async () => {
+  el.fetchModels.addEventListener("click", async () => {
     const p = settings.activeProvider;
     const c = settings.providers[p];
     if (!c.apiKey) {
-      flash('Enter an API key first', true);
+      flash("Enter an API key first", true);
       return;
     }
 
     el.fetchModels.disabled = true;
-    el.fetchModels.textContent = 'Fetching...';
+    el.fetchModels.textContent = "Fetching...";
 
     try {
       const client = buildFetchClient(p);
-      if (!client) throw new Error('Unknown provider');
+      if (!client) throw new Error("Unknown provider");
       const models = await client.listModels();
       const saved = c.model;
-      el.modelSelect.innerHTML = '';
+      el.modelSelect.innerHTML = "";
       for (const id of models) {
-        const opt = document.createElement('option');
+        const opt = document.createElement("option");
         opt.value = id;
         opt.textContent = id;
         el.modelSelect.appendChild(opt);
@@ -141,12 +144,15 @@ function wire() {
         el.modelSelect.value = saved;
       }
       settings.providerModels = { ...settings.providerModels, [p]: models };
-      await storage.set('providerModels', settings.providerModels);
+      await storage.set("providerModels", settings.providerModels);
     } catch (err) {
-      flash(`Failed: ${err instanceof Error ? err.message : 'Unknown error'}`, true);
+      flash(
+        `Failed: ${err instanceof Error ? err.message : "Unknown error"}`,
+        true,
+      );
     } finally {
       el.fetchModels.disabled = false;
-      el.fetchModels.textContent = 'Fetch';
+      el.fetchModels.textContent = "Fetch";
     }
   });
 }
@@ -156,10 +162,10 @@ function saveGithubToken() {
   const val = el.githubToken.value;
   if (val && val !== DIRTY_MASK) {
     settings.githubToken = val;
-    storage.set('githubToken', val).then(() => flash('GitHub token saved'));
-  } else if (val === '' && settings.githubToken) {
+    storage.set("githubToken", val).then(() => flash("GitHub token saved"));
+  } else if (val === "" && settings.githubToken) {
     settings.githubToken = undefined;
-    storage.remove('githubToken').then(() => flash('GitHub token removed'));
+    storage.remove("githubToken").then(() => flash("GitHub token removed"));
   }
 }
 
@@ -168,10 +174,14 @@ function saveApiKey() {
   const val = el.apiKey.value;
   if (val && val !== DIRTY_MASK) {
     setProviderConfig(settings.activeProvider, { apiKey: val });
-    storage.set('providers', settings.providers).then(() => flash('API key saved'));
-  } else if (val === '' && settings.providers[settings.activeProvider].apiKey) {
+    storage
+      .set("providers", settings.providers)
+      .then(() => flash("API key saved"));
+  } else if (val === "" && settings.providers[settings.activeProvider].apiKey) {
     setProviderConfig(settings.activeProvider, { apiKey: undefined });
-    storage.set('providers', settings.providers).then(() => flash('API key removed'));
+    storage
+      .set("providers", settings.providers)
+      .then(() => flash("API key removed"));
   }
 }
 
@@ -179,19 +189,19 @@ function render() {
   const el = getElements();
   isRendering = true;
 
-  el.githubToken.value = settings.githubToken ? DIRTY_MASK : '';
+  el.githubToken.value = settings.githubToken ? DIRTY_MASK : "";
   el.aiProvider.value = settings.activeProvider;
 
   const p = settings.activeProvider;
   const c = settings.providers[p];
 
-  el.apiKey.value = c.apiKey ? DIRTY_MASK : '';
+  el.apiKey.value = c.apiKey ? DIRTY_MASK : "";
 
   const cached = settings.providerModels?.[p];
   if (cached && cached.length > 0) {
-    el.modelSelect.innerHTML = '';
+    el.modelSelect.innerHTML = "";
     for (const id of cached) {
-      const opt = document.createElement('option');
+      const opt = document.createElement("option");
       opt.value = id;
       opt.textContent = id;
       el.modelSelect.appendChild(opt);
@@ -202,7 +212,7 @@ function render() {
   } else if (c.model) {
     const existing = Array.from(el.modelSelect.options).map((o) => o.value);
     if (!existing.includes(c.model)) {
-      const opt = document.createElement('option');
+      const opt = document.createElement("option");
       opt.value = c.model;
       opt.textContent = c.model;
       el.modelSelect.appendChild(opt);
@@ -210,12 +220,12 @@ function render() {
     el.modelSelect.value = c.model;
   }
 
-  el.openCodeEndpointField.style.display = p === 'opencode' ? 'flex' : 'none';
-  if (p === 'opencode') {
+  el.openCodeEndpointField.style.display = p === "opencode" ? "flex" : "none";
+  if (p === "opencode") {
     el.openCodeEndpoint.value = settings.providers.opencode.endpoint;
   }
 
-  el.fetchModels.style.display = 'inline-block';
+  el.fetchModels.style.display = "inline-block";
 
   el.listPrivacy.value = settings.listPrivacy;
 
@@ -223,65 +233,71 @@ function render() {
 }
 
 function setProviderConfig(
-  provider: ExtensionSettings['activeProvider'],
+  provider: ExtensionSettings["activeProvider"],
   update: Record<string, string | undefined>,
 ) {
   switch (provider) {
-    case 'anthropic':
-      settings.providers.anthropic = { ...settings.providers.anthropic, ...update };
+    case "anthropic":
+      settings.providers.anthropic = {
+        ...settings.providers.anthropic,
+        ...update,
+      };
       break;
-    case 'openai':
+    case "openai":
       settings.providers.openai = { ...settings.providers.openai, ...update };
       break;
-    case 'opencode':
-      settings.providers.opencode = { ...settings.providers.opencode, ...update };
+    case "opencode":
+      settings.providers.opencode = {
+        ...settings.providers.opencode,
+        ...update,
+      };
       break;
   }
 }
 
-function buildFetchClient(provider: ExtensionSettings['activeProvider']) {
+function buildFetchClient(provider: ExtensionSettings["activeProvider"]) {
   switch (provider) {
-    case 'openai':
+    case "openai":
       return new OpenAIClient(
         settings.providers.openai.apiKey!,
-        settings.providers.openai.model ?? 'gpt-4o',
+        settings.providers.openai.model ?? "gpt-4o",
       );
-    case 'anthropic':
+    case "anthropic":
       return new AnthropicClient(
         settings.providers.anthropic.apiKey!,
-        settings.providers.anthropic.model ?? 'claude-sonnet-4-20250514',
+        settings.providers.anthropic.model ?? "claude-sonnet-4-20250514",
       );
-    case 'opencode':
+    case "opencode":
       return new OpenCodeClient(
         settings.providers.opencode.apiKey!,
-        settings.providers.opencode.model ?? 'gpt-4o',
+        settings.providers.opencode.model ?? "gpt-4o",
         settings.providers.opencode.endpoint,
       );
   }
 }
 
 function flash(msg: string, isError = false) {
-  const existing = document.getElementById('flash');
+  const existing = document.getElementById("flash");
   if (existing) {
     existing.textContent = msg;
-    existing.className = isError ? 'flash flash-error' : 'flash';
-    existing.style.opacity = '1';
+    existing.className = isError ? "flash flash-error" : "flash";
+    existing.style.opacity = "1";
     setTimeout(() => {
-      existing.style.opacity = '0';
+      existing.style.opacity = "0";
     }, 2500);
     return;
   }
 
-  const div = document.createElement('div');
-  div.id = 'flash';
+  const div = document.createElement("div");
+  div.id = "flash";
   div.textContent = msg;
-  div.className = isError ? 'flash flash-error' : 'flash';
+  div.className = isError ? "flash flash-error" : "flash";
   document.body.appendChild(div);
   requestAnimationFrame(() => {
-    div.style.opacity = '1';
+    div.style.opacity = "1";
   });
   setTimeout(() => {
-    div.style.opacity = '0';
+    div.style.opacity = "0";
   }, 2500);
 }
 
@@ -294,15 +310,21 @@ function getElements() {
 
 function queryElements() {
   return {
-    githubToken: document.getElementById('githubToken') as HTMLInputElement,
-    deleteGithubToken: document.getElementById('deleteGithubToken') as HTMLButtonElement,
-    aiProvider: document.getElementById('aiProvider') as HTMLSelectElement,
-    apiKey: document.getElementById('apiKey') as HTMLInputElement,
-    deleteApiKey: document.getElementById('deleteApiKey') as HTMLButtonElement,
-    openCodeEndpointField: document.getElementById('openCodeEndpointField') as HTMLElement,
-    openCodeEndpoint: document.getElementById('openCodeEndpoint') as HTMLSelectElement,
-    fetchModels: document.getElementById('fetchModels') as HTMLButtonElement,
-    modelSelect: document.getElementById('modelSelect') as HTMLSelectElement,
-    listPrivacy: document.getElementById('listPrivacy') as HTMLSelectElement,
+    githubToken: document.getElementById("githubToken") as HTMLInputElement,
+    deleteGithubToken: document.getElementById(
+      "deleteGithubToken",
+    ) as HTMLButtonElement,
+    aiProvider: document.getElementById("aiProvider") as HTMLSelectElement,
+    apiKey: document.getElementById("apiKey") as HTMLInputElement,
+    deleteApiKey: document.getElementById("deleteApiKey") as HTMLButtonElement,
+    openCodeEndpointField: document.getElementById(
+      "openCodeEndpointField",
+    ) as HTMLElement,
+    openCodeEndpoint: document.getElementById(
+      "openCodeEndpoint",
+    ) as HTMLSelectElement,
+    fetchModels: document.getElementById("fetchModels") as HTMLButtonElement,
+    modelSelect: document.getElementById("modelSelect") as HTMLSelectElement,
+    listPrivacy: document.getElementById("listPrivacy") as HTMLSelectElement,
   };
 }

@@ -1,5 +1,5 @@
-import type { AiProviderClient } from './providers/base';
-import type { RepoMetadata } from './github';
+import type { AiProviderClient } from "./providers/base";
+import type { RepoMetadata } from "./github";
 
 export async function categorizeRepository(
   client: AiProviderClient,

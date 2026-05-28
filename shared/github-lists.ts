@@ -1,4 +1,4 @@
-const GITHUB_GRAPHQL_URL = 'https://api.github.com/graphql';
+const GITHUB_GRAPHQL_URL = "https://api.github.com/graphql";
 
 export interface GitHubList {
   id: string;
@@ -9,7 +9,7 @@ export interface GitHubList {
 export class ScopeError extends Error {
   constructor(message: string) {
     super(message);
-    this.name = 'ScopeError';
+    this.name = "ScopeError";
   }
 }
 
@@ -19,10 +19,10 @@ async function graphqlRequest<T>(
   variables?: Record<string, unknown>,
 ): Promise<T> {
   const res = await fetch(GITHUB_GRAPHQL_URL, {
-    method: 'POST',
+    method: "POST",
     headers: {
       Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
+      "Content-Type": "application/json",
     },
     body: JSON.stringify({ query, variables }),
   });
@@ -36,10 +36,10 @@ async function graphqlRequest<T>(
 
   if (json.errors) {
     const err = json.errors[0];
-    const type = err.type || '';
-    if (type === 'FORBIDDEN' || type === 'UNAUTHORIZED') {
+    const type = err.type || "";
+    if (type === "FORBIDDEN" || type === "UNAUTHORIZED") {
       throw new ScopeError(
-        'Your GitHub token lacks permission to access star lists. Use a classic personal access token with the `user` scope: https://github.com/settings/tokens',
+        "Your GitHub token lacks permission to access star lists. Use a classic personal access token with the `user` scope: https://github.com/settings/tokens",
       );
     }
     throw new Error(`GraphQL error: ${err.message}`);
@@ -80,9 +80,9 @@ export async function getViewerLists(token: string): Promise<GitHubList[]> {
     return data.viewer.lists.nodes;
   } catch (err) {
     if (err instanceof ScopeError) throw err;
-    if (err instanceof Error && err.message.includes('viewer')) {
+    if (err instanceof Error && err.message.includes("viewer")) {
       throw new ScopeError(
-        'Your GitHub token cannot access user data. Use a classic personal access token with the `user` scope: https://github.com/settings/tokens',
+        "Your GitHub token cannot access user data. Use a classic personal access token with the `user` scope: https://github.com/settings/tokens",
       );
     }
     throw err;
@@ -175,8 +175,8 @@ export function fuzzyMatchListName(
     s
       .toLowerCase()
       .trim()
-      .replace(/\s+/g, ' ')
-      .replace(/[^\p{L}\p{N}\s]/gu, '')
+      .replace(/\s+/g, " ")
+      .replace(/[^\p{L}\p{N}\s]/gu, "")
       .trim();
 
   const target = norm(category);

@@ -1,3 +1,3 @@
-import { initSettingsPage } from '@/shared/settings';
+import { initSettingsPage } from "@/shared/settings";
 
 initSettingsPage();

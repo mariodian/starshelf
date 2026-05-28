@@ -1,5 +1,5 @@
-import { storage } from '@/shared/storage';
-import type { ExtensionSettings } from '@/shared/storage';
+import { storage } from "@/shared/storage";
+import type { ExtensionSettings } from "@/shared/storage";
 
 function readEnvSettings(): Partial<ExtensionSettings> {
   const partial: Partial<ExtensionSettings> = {};
@@ -8,16 +8,20 @@ function readEnvSettings(): Partial<ExtensionSettings> {
   if (githubToken) partial.githubToken = githubToken;
 
   const activeProvider = import.meta.env.VITE_ACTIVE_PROVIDER;
-  if (activeProvider === 'anthropic' || activeProvider === 'openai' || activeProvider === 'opencode') {
+  if (
+    activeProvider === "anthropic" ||
+    activeProvider === "openai" ||
+    activeProvider === "opencode"
+  ) {
     partial.activeProvider = activeProvider;
   }
 
   const listPrivacy = import.meta.env.VITE_LIST_PRIVACY;
-  if (listPrivacy === 'public' || listPrivacy === 'private') {
+  if (listPrivacy === "public" || listPrivacy === "private") {
     partial.listPrivacy = listPrivacy;
   }
 
-  const providers: Partial<ExtensionSettings['providers']> = {};
+  const providers: Partial<ExtensionSettings["providers"]> = {};
 
   const anthropicKey = import.meta.env.VITE_ANTHROPIC_API_KEY;
   const anthropicModel = import.meta.env.VITE_ANTHROPIC_MODEL;
@@ -37,16 +41,19 @@ function readEnvSettings(): Partial<ExtensionSettings> {
 
   const opencodeKey = import.meta.env.VITE_OPENCODE_API_KEY;
   const opencodeModel = import.meta.env.VITE_OPENCODE_MODEL;
-  const opencodeEndpoint = import.meta.env.VITE_OPENCODE_ENDPOINT as 'zen' | 'zen-go' | undefined;
+  const opencodeEndpoint = import.meta.env.VITE_OPENCODE_ENDPOINT as
+    | "zen"
+    | "zen-go"
+    | undefined;
   if (opencodeKey || opencodeModel || opencodeEndpoint) {
-    providers.opencode = { endpoint: 'zen' };
+    providers.opencode = { endpoint: "zen" };
     if (opencodeKey) providers.opencode.apiKey = opencodeKey;
     if (opencodeModel) providers.opencode.model = opencodeModel;
     if (opencodeEndpoint) providers.opencode.endpoint = opencodeEndpoint;
   }
 
   if (Object.keys(providers).length > 0) {
-    partial.providers = providers as ExtensionSettings['providers'];
+    partial.providers = providers as ExtensionSettings["providers"];
   }
 
   return partial;
