@@ -1,5 +1,5 @@
 {
-  "name": "github-star-categorizer",
+  "name": "starshelf",
   "description": "Auto-categorize GitHub starred repos with AI",
   "private": true,
   "version": "0.0.1",
@@ -9,6 +9,7 @@
     "dev:firefox": "wxt -b firefox",
     "build": "wxt build",
     "build:firefox": "wxt build -b firefox",
+    "format": "bunx prettier --write '**/*.{ts,css,html}'",
     "zip": "wxt zip",
     "zip:firefox": "wxt zip -b firefox",
     "compile": "tsc --noEmit",

@@ -1,3 +1,57 @@
+:root {
+  --bg-body: #ffffff;
+  --bg-section: #f6f8fa;
+  --bg-input: #ffffff;
+
+  --text-primary: #24292f;
+  --text-secondary: #57606a;
+  --text-muted: #6e7781;
+  --text-link: #4c10a9;
+  --text-inverse: #ffffff;
+
+  --border-primary: #d0d7de;
+  --border-secondary: #d0d7de;
+  --border-focus: #4c10a9;
+
+  --btn-bg: #1f883d;
+  --btn-bg-hover: #1a7f37;
+  --btn-danger: #cf222e;
+  --btn-danger-hover: #a40e26;
+
+  --flash-success: #1f883d;
+  --flash-error: #cf222e;
+
+  --hint: #6e7781;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg-body: #0d1117;
+    --bg-section: #161b22;
+    --bg-input: #0d1117;
+
+    --text-primary: #c9d1d9;
+    --text-secondary: #8b949e;
+    --text-muted: #484f58;
+    --text-link: #693ea9;
+    --text-inverse: #ffffff;
+
+    --border-primary: #30363d;
+    --border-secondary: #21262d;
+    --border-focus: #693ea9;
+
+    --btn-bg: #238636;
+    --btn-bg-hover: #2ea043;
+    --btn-danger: #da3633;
+    --btn-danger-hover: #f85149;
+
+    --flash-success: #238636;
+    --flash-error: #da3633;
+
+    --hint: #6e7681;
+  }
+}
+
 * {
   box-sizing: border-box;
 }
@@ -5,8 +59,8 @@
 body {
   font-family:
     -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
-  background: #0d1117;
-  color: #c9d1d9;
+  background: var(--bg-body);
+  color: var(--text-primary);
   margin: 0;
   padding: 16px;
   width: 420px;
@@ -17,45 +71,52 @@ body {
 }
 
 h1 {
-  color: #58a6ff;
+  color: var(--text-link);
   font-size: 18px;
   margin: 0 0 16px;
 }
 
 h2 {
-  color: #8b949e;
+  color: var(--text-secondary);
   font-size: 13px;
   font-weight: 600;
   margin: 0 0 8px;
 }
 
 section {
-  background: #161b22;
-  border: 1px solid #30363d;
+  background: var(--bg-section);
+  border: 1px solid var(--border-primary);
   border-radius: 8px;
   padding: 12px;
   margin-bottom: 12px;
 }
 
 p {
-  color: #8b949e;
+  color: var(--text-secondary);
   font-size: 12px;
   margin: 0 0 10px;
   line-height: 1.6;
 }
 
 a {
-  color: #58a6ff;
+  color: var(--text-link);
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
 }
 
 .optional {
   font-weight: 400;
-  color: #484f58;
+  color: var(--text-muted);
   font-size: 11px;
 }
 
 .muted {
-  color: #484f58;
+  color: var(--text-muted);
 }
 
 .field {
@@ -70,16 +131,16 @@ a {
 }
 
 label {
-  color: #c9d1d9;
+  color: var(--text-primary);
   font-size: 12px;
   min-width: 64px;
 }
 
 input,
 select {
-  background: #0d1117;
-  color: #c9d1d9;
-  border: 1px solid #30363d;
+  background: var(--bg-input);
+  color: var(--text-primary);
+  border: 1px solid var(--border-primary);
   border-radius: 6px;
   padding: 5px 8px;
   font-size: 12px;
@@ -90,12 +151,12 @@ select {
 input:focus,
 select:focus {
   outline: none;
-  border-color: #58a6ff;
+  border-color: var(--border-focus);
 }
 
 button {
-  background: #238636;
-  color: #fff;
+  background: var(--btn-bg);
+  color: var(--text-inverse);
   border: none;
   border-radius: 6px;
   padding: 5px 10px;
@@ -106,52 +167,25 @@ button {
 }
 
 button:hover {
-  background: #2ea043;
+  background: var(--btn-bg-hover);
 }
 
 button.danger {
-  background: #da3633;
+  background: var(--btn-danger);
 }
 button.danger:hover {
-  background: #f85149;
+  background: var(--btn-danger-hover);
 }
 button.small {
   padding: 3px 8px;
   font-size: 11px;
 }
 
-.repo-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 8px;
-  background: #0d1117;
-  border-radius: 6px;
-  border: 1px solid #21262d;
-  margin-bottom: 4px;
-}
-
-.repo-name {
-  font-weight: 600;
-  color: #58a6ff;
-  flex: 1;
-  font-size: 12px;
-}
-
-.repo-tag {
-  background: #1f6feb;
-  color: #fff;
-  padding: 2px 6px;
-  border-radius: 10px;
-  font-size: 10px;
-  flex-shrink: 0;
-}
-
 .flash {
   position: fixed;
   top: 12px;
   right: 12px;
-  color: #238636;
+  color: var(--flash-success);
   padding: 8px 14px;
   border-radius: 8px;
   font-size: 12px;
@@ -162,18 +196,18 @@ button.small {
 }
 
 .flash-error {
-  color: #da3633;
+  color: var(--flash-error);
 }
 
 .hint {
-  color: #6e7681;
+  color: var(--hint);
   font-size: 11px;
   margin: 4px 0 0;
 }
 
 code {
-  background: #0d1117;
-  border: 1px solid #30363d;
+  background: var(--bg-input);
+  border: 1px solid var(--border-primary);
   border-radius: 3px;
   padding: 1px 4px;
   font-size: 11px;

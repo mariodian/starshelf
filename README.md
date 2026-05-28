@@ -1,4 +1,4 @@
-# GitHub Star Categorizer
+# Starshelf
 
 Chrome extension that auto-categorizes GitHub repos when you star them — using your choice of AI provider.
 
@@ -27,16 +27,16 @@ shared/
 2. **Content script** detects the click and sends `repoStarClicked` to the background worker
 3. **Background** verifies the sender tab, fetches repo metadata (optionally via GitHub API), calls the selected AI provider for categorization, and stores the result
 4. **Background** sends `updateStarStatus` back to the content script
-5. **Content script** shows a temporary overlay ("Categorizing...", category name, or error)
+5. **Content script** shows a temporary overlay ("Shelving...", category name, or error)
 6. Unstarring removes the stored categorization
 
 ### Providers
 
-| Provider  | API | Model selection | Model listing |
-|-----------|-----|----------------|---------------|
-| Anthropic | Messages API | Manual entry | — |
-| OpenAI | Chat Completions | Manual + fetch from `/v1/models` | Yes |
-| OpenCode | Chat Completions (Zen/Go) | Manual entry (`provider/model`) | — |
+| Provider  | API                       | Model selection                  | Model listing |
+| --------- | ------------------------- | -------------------------------- | ------------- |
+| Anthropic | Messages API              | Manual entry                     | —             |
+| OpenAI    | Chat Completions          | Manual + fetch from `/v1/models` | Yes           |
+| OpenCode  | Chat Completions (Zen/Go) | Manual entry (`provider/model`)  | —             |
 
 ## Development
 
@@ -76,11 +76,11 @@ The `.wxt/` directory is gitignored, so the profile is local to your machine.
 
 ## Permissions
 
-| Permission | Why |
-|-----------|-----|
-| `storage` | Persist settings and categorizations |
-| `activeTab` | Verify sender tab context |
-| `https://github.com/*` | Content script injection |
+| Permission             | Why                                  |
+| ---------------------- | ------------------------------------ |
+| `storage`              | Persist settings and categorizations |
+| `activeTab`            | Verify sender tab context            |
+| `https://github.com/*` | Content script injection             |
 
 ## Future
 

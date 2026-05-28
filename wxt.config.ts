@@ -12,7 +12,7 @@ if (isDev) {
 // See https://wxt.dev/api/config.html
 export default defineConfig({
   manifest: {
-    name: "GitHub Star Categorizer",
+    name: "Starshelf",
     description: "Auto-categorize GitHub starred repos with AI",
     version: "0.0.1",
     // Fixed key in dev ensures the extension ID stays stable across reloads,
