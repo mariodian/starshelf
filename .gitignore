@@ -1,5 +1,15 @@
+# Dependencies
+node_modules/
+
+# Build artifacts
+dist/
+.output/
+stats.html
+stats-*.json
+.wxt/
+
 # Logs
-logs
+logs/
 *.log
 npm-debug.log*
 yarn-debug.log*
@@ -7,22 +17,29 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
-node_modules
-.output
-dist
-stats.html
-stats-*.json
-.wxt
-web-ext.config.ts
+# Environment
 .env.development
 
+# Config
+web-ext.config.ts
+
 # Editor directories and files
-.vscode/*
-!.vscode/extensions.json
-.idea
+.idea/
 .DS_Store
 *.suo
 *.ntvs*
 *.njsproj
 *.sln
 *.sw?
+
+# Local tooling temp/state
+.githooks/
+.opencode/
+
+# Mempalace state
+entities.json
+mempalace.yaml
+
+# VSCode settings (except for the ones we want to keep)
+.vscode/*
+!.vscode/extensions.json

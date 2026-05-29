@@ -6,10 +6,14 @@
   "type": "module",
   "scripts": {
     "dev": "wxt",
+    "dev:nobrowser": "VITE_BROWSER_DISABLED=true wxt",
     "dev:firefox": "wxt -b firefox",
     "build": "wxt build",
-    "build:firefox": "wxt build -b firefox",
+    "check": "bun run format:check && bun run compile && bun run test",
     "format": "bunx prettier --write '**/*.{ts,css,html}'",
+    "format:check": "bunx prettier --check '**/*.{ts,css,html}'",
+    "test": "vitest run",
+    "build:firefox": "wxt build -b firefox",
     "zip": "wxt zip",
     "zip:firefox": "wxt zip -b firefox",
     "compile": "tsc --noEmit",
@@ -17,6 +21,7 @@
   },
   "devDependencies": {
     "typescript": "^5.9.3",
+    "vitest": "^4.1.7",
     "wxt": "^0.20.26"
   }
 }
