@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+## [v0.0.2] - 2026-05-29
+
+### Added
+
+- **Emoji and formatting** options in popup settings: toggle emoji prefixes, category-prefix format (`Category: Name`), and auto-format mode that detects existing list naming conventions
+- Auto-detection of emoji usage and colon-separated category prefixes in existing star lists to match formatting style
+- Prompt-level formatting hints passed to all AI providers (**Anthropic**, **OpenAI**, **OpenCode**) based on user preferences
+- Checkbox styling and disabled-state visuals in the popup
+
+### Changed
+
+- Flash messages now use background-filled styling for better visibility
+- Storage schema extended with `enableEmojis`, `enableCategoryPrefix`, and `autoFormat` settings (defaults: `false`, `false`, `true`)
+
 ## [v0.0.1] - 2026-05-29
 
 ### Added
