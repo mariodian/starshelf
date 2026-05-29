@@ -133,6 +133,10 @@ a {
   margin-bottom: 8px;
 }
 
+.field.separate {
+  margin-top: 12px;
+}
+
 .field:last-child {
   margin-bottom: 0;
 }
@@ -198,7 +202,8 @@ button.small {
   position: fixed;
   top: 12px;
   right: 12px;
-  color: var(--flash-success);
+  background: var(--flash-success);
+  color: var(--text-inverse);
   padding: 8px 14px;
   border-radius: 8px;
   font-size: 12px;
@@ -209,7 +214,8 @@ button.small {
 }
 
 .flash-error {
-  color: var(--flash-error);
+  background: var(--flash-error);
+  color: var(--text-inverse);
 }
 
 .hint {
@@ -228,4 +234,19 @@ code {
 
 #modelSelect {
   width: 100%;
+}
+
+input[type="checkbox"] {
+  flex: none;
+  width: auto;
+  accent-color: var(--btn-bg);
+}
+
+input[type="checkbox"]:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+input[type="checkbox"]:disabled + label {
+  opacity: 0.5;
 }

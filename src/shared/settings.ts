@@ -95,6 +95,29 @@ function wire() {
     flash("Privacy saved");
   });
 
+  el.enableEmojis.addEventListener("change", () => {
+    if (isRendering) return;
+    settings.enableEmojis = el.enableEmojis.checked;
+    storage.set("enableEmojis", settings.enableEmojis);
+    flash("Emoji setting saved");
+  });
+
+  el.enableCategoryPrefix.addEventListener("change", () => {
+    if (isRendering) return;
+    settings.enableCategoryPrefix = el.enableCategoryPrefix.checked;
+    storage.set("enableCategoryPrefix", settings.enableCategoryPrefix);
+    flash("Category prefix setting saved");
+  });
+
+  el.autoFormat.addEventListener("change", () => {
+    if (isRendering) return;
+    settings.autoFormat = el.autoFormat.checked;
+    storage.set("autoFormat", settings.autoFormat);
+    el.enableEmojis.disabled = settings.autoFormat;
+    el.enableCategoryPrefix.disabled = settings.autoFormat;
+    flash("Auto-format setting saved");
+  });
+
   el.githubToken.addEventListener("blur", () => {
     if (isRendering) return;
     clearDebounce("githubToken");
@@ -224,10 +247,16 @@ function render() {
   if (p === "opencode") {
     el.openCodeEndpoint.value = settings.providers.opencode.endpoint;
   }
+  el.autoFormat.checked = settings.autoFormat;
 
   el.fetchModels.style.display = "inline-block";
 
   el.listPrivacy.value = settings.listPrivacy;
+
+  el.enableEmojis.checked = settings.enableEmojis;
+  el.enableCategoryPrefix.checked = settings.enableCategoryPrefix;
+  el.enableEmojis.disabled = settings.autoFormat;
+  el.enableCategoryPrefix.disabled = settings.autoFormat;
 
   isRendering = false;
 }
@@ -326,5 +355,10 @@ function queryElements() {
     fetchModels: document.getElementById("fetchModels") as HTMLButtonElement,
     modelSelect: document.getElementById("modelSelect") as HTMLSelectElement,
     listPrivacy: document.getElementById("listPrivacy") as HTMLSelectElement,
+    enableEmojis: document.getElementById("enableEmojis") as HTMLInputElement,
+    enableCategoryPrefix: document.getElementById(
+      "enableCategoryPrefix",
+    ) as HTMLInputElement,
+    autoFormat: document.getElementById("autoFormat") as HTMLInputElement,
   };
 }

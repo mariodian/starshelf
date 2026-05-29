@@ -7,6 +7,17 @@ export async function categorizeRepository(
   owner: string,
   repo: string,
   existingLists: string[],
+  enableEmojis = false,
+  enableCategoryPrefix = false,
+  autoFormat = true,
 ): Promise<string> {
-  return client.categorize(metadata, owner, repo, existingLists);
+  return client.categorize(
+    metadata,
+    owner,
+    repo,
+    existingLists,
+    enableEmojis,
+    enableCategoryPrefix,
+    autoFormat,
+  );
 }

@@ -174,6 +174,9 @@ async function handleStarClick(
         owner,
         repo,
         existingNames,
+        settings.enableEmojis,
+        settings.enableCategoryPrefix,
+        settings.autoFormat,
       );
       logger.log("[stars] bg | AI result:", category);
     } catch (err) {

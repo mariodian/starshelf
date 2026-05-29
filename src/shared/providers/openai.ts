@@ -15,6 +15,9 @@ export class OpenAIClient implements AiProviderClient {
     owner: string,
     repo: string,
     existingLists: string[],
+    enableEmojis = false,
+    enableCategoryPrefix = false,
+    autoFormat = true,
   ): Promise<string> {
     const response = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
@@ -28,11 +31,19 @@ export class OpenAIClient implements AiProviderClient {
           {
             role: "system",
             content:
-              "You are a GitHub repo classifier. Assign a category label using at most 2 nouns. No verbs, no articles, no explanation. Output only the label.",
+              "You are a GitHub repo classifier. Assign a category label using at most 3 nouns. No verbs, no articles, no explanation. Output only the label.",
           },
           {
             role: "user",
-            content: buildPrompt(metadata, owner, repo, existingLists),
+            content: buildPrompt(
+              metadata,
+              owner,
+              repo,
+              existingLists,
+              enableEmojis,
+              enableCategoryPrefix,
+              autoFormat,
+            ),
           },
         ],
         max_completion_tokens: 4096,

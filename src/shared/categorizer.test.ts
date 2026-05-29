@@ -30,6 +30,9 @@ describe("categorizeRepository", () => {
       "owner",
       "repo",
       ["DevOps", "Frontend"],
+      false,
+      false,
+      true,
     );
   });
 
@@ -70,6 +73,9 @@ describe("categorizeRepository", () => {
       "owner",
       "repo",
       [],
+      false,
+      false,
+      true,
     );
   });
 });

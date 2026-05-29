@@ -7,6 +7,9 @@ export interface ExtensionSettings {
     opencode: { apiKey?: string; model?: string; endpoint: "zen" | "zen-go" };
   };
   listPrivacy: "public" | "private";
+  enableEmojis: boolean;
+  enableCategoryPrefix: boolean;
+  autoFormat: boolean;
   providerModels?: Record<string, string[]>;
 }
 
@@ -56,6 +59,9 @@ export class ExtensionStorage {
         opencode: { endpoint: "zen" },
       },
       listPrivacy: "private",
+      enableEmojis: false,
+      enableCategoryPrefix: false,
+      autoFormat: true,
       providerModels: {},
     };
     const keys = Object.keys(defaults) as (keyof ExtensionSettings)[];
@@ -81,6 +87,10 @@ export class ExtensionStorage {
       activeProvider: partial.activeProvider ?? current.activeProvider,
       githubToken: partial.githubToken ?? current.githubToken,
       listPrivacy: partial.listPrivacy ?? current.listPrivacy,
+      enableEmojis: partial.enableEmojis ?? current.enableEmojis,
+      enableCategoryPrefix:
+        partial.enableCategoryPrefix ?? current.enableCategoryPrefix,
+      autoFormat: partial.autoFormat ?? current.autoFormat,
       providers: {
         anthropic: {
           apiKey:

@@ -40,7 +40,7 @@ describe("buildPrompt", () => {
     ]);
 
     expect(prompt).toContain(
-      "Match the formatting of existing categories: DevOps, CLI Tools",
+      "Match the formatting style (emoji, prefix pattern, casing) of existing lists:",
     );
     expect(prompt).toContain("Existing star lists: DevOps, CLI Tools");
   });
@@ -50,14 +50,114 @@ describe("buildPrompt", () => {
     const prompt = buildPrompt(metadata, "u", "r", []);
 
     expect(prompt).not.toContain("Existing star lists:");
-    expect(prompt).not.toContain("Match the formatting of existing categories");
+    expect(prompt).not.toContain("Match the formatting style");
   });
 
   it("contains the output-only instruction", () => {
     const metadata: RepoMetadata = { topics: [] };
     const prompt = buildPrompt(metadata, "u", "r", []);
 
-    expect(prompt).toContain("Output ONLY the category label");
+    expect(prompt).toContain("Output ONLY the list name");
+  });
+
+  it("includes emoji hint when enableEmojis is true", () => {
+    const metadata: RepoMetadata = { topics: ["cli"] };
+    const prompt = buildPrompt(metadata, "user", "tool", [], true, false);
+
+    expect(prompt).toContain("Prefix the list name with a relevant emoji");
+  });
+
+  it("omits emoji hint when enableEmojis is false", () => {
+    const metadata: RepoMetadata = { topics: ["cli"] };
+    const prompt = buildPrompt(metadata, "user", "tool", [], false, false);
+
+    expect(prompt).not.toContain("relevant emoji");
+  });
+
+  it("auto-detects emojis when existing lists use them", () => {
+    const metadata: RepoMetadata = { topics: ["cli"] };
+    const prompt = buildPrompt(
+      metadata,
+      "user",
+      "tool",
+      ["🔧 Dev Tools", "🤖 AI"],
+      false,
+      false,
+    );
+
+    expect(prompt).toContain("Prefix the list name with a relevant emoji");
+  });
+
+  it("ignores detected emojis when autoFormat is off", () => {
+    const metadata: RepoMetadata = { topics: ["cli"] };
+    const prompt = buildPrompt(
+      metadata,
+      "user",
+      "tool",
+      ["🔧 Dev Tools", "🤖 AI"],
+      false,
+      false,
+      false,
+    );
+
+    expect(prompt).not.toContain("relevant emoji");
+  });
+
+  it("includes category prefix format when enableCategoryPrefix is true", () => {
+    const metadata: RepoMetadata = { topics: ["web"] };
+    const prompt = buildPrompt(metadata, "user", "tool", [], false, true);
+
+    expect(prompt).toContain("Category: Name");
+  });
+
+  it("omits category prefix format when enableCategoryPrefix is false", () => {
+    const metadata: RepoMetadata = { topics: ["web"] };
+    const prompt = buildPrompt(metadata, "user", "tool", [], false, false);
+
+    expect(prompt).not.toContain("Category: Name");
+  });
+
+  it("auto-detects categories when existing lists use colon format", () => {
+    const metadata: RepoMetadata = { topics: ["web"] };
+    const prompt = buildPrompt(
+      metadata,
+      "user",
+      "tool",
+      ["Dev: Framework", "AI: Tool"],
+      false,
+      false,
+    );
+
+    expect(prompt).toContain("Category: Name");
+  });
+
+  it("does not auto-detect categories when existing lists lack colons", () => {
+    const metadata: RepoMetadata = { topics: ["web"] };
+    const prompt = buildPrompt(
+      metadata,
+      "user",
+      "tool",
+      ["DevOps", "CLI Tools"],
+      false,
+      false,
+    );
+
+    expect(prompt).not.toContain("Category: Name");
+  });
+
+  it("ignores detected categories when autoFormat is off", () => {
+    const metadata: RepoMetadata = { topics: ["web"] };
+    const prompt = buildPrompt(
+      metadata,
+      "user",
+      "tool",
+      ["Dev: Framework", "AI: Tool"],
+      false,
+      false,
+      false,
+    );
+
+    expect(prompt).not.toContain("Category: Name");
   });
 });
 

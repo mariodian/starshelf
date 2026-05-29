@@ -105,6 +105,9 @@ describe("ExtensionStorage", () => {
           openai: { apiKey: "sk-key" },
           opencode: { endpoint: "zen-go" as const },
         },
+        enableEmojis: false,
+        enableCategoryPrefix: false,
+        autoFormat: true,
       };
 
       await storage.setSettings(settingsObj);
