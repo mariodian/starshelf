@@ -19,6 +19,7 @@ lerna-debug.log*
 
 # Environment
 .env.development
+.env.submit
 
 # Config
 web-ext.config.ts
