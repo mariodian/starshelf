@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.0.3] - 2026-05-29
+
+### Fixed
+
+- **Chrome Webstore** key now set correctly in extension configuration
+
 ## [v0.0.2] - 2026-05-29
 
 ### Added
