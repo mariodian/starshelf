@@ -1,0 +1,84 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: bun install
+      - run: bun run zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: extension-zips
+          path: dest/
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: extension-zips
+          path: dest
+
+      - name: Extract version from tag
+        id: version
+        run: echo "version=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+
+      - name: Validate and load user release notes
+        id: notes
+        run: |
+          version="${{ steps.version.outputs.version }}"
+          notes_file="release-notes/${version}.md"
+
+          if [ ! -f "$notes_file" ]; then
+            echo "Missing user-facing release notes: $notes_file" >&2
+            echo "Create release-notes/${version}.md before tagging a release." >&2
+            exit 1
+          fi
+
+          cp "$notes_file" /tmp/release_notes.md
+
+          # Remove the leading # vX.X.X heading — GitHub renders its own title
+          sed -i '1{/^# v[0-9]/d}' /tmp/release_notes.md
+
+          prev_version=$(awk -v v="$version" '
+            BEGIN { found=0 }
+            {
+              line = $0
+              sub(/^[[:space:]]+/, "", line)
+            }
+            found && line ~ /^## \[/ {
+              sub(/^## \[/, "", line)
+              sub(/\].*$/, "", line)
+              print line
+              exit
+            }
+            index(line, "## [" v "]") == 1 { found=1 }
+          ' CHANGELOG.md)
+
+          if [ -n "$prev_version" ]; then
+            echo "" >> /tmp/release_notes.md
+            echo "**Full Changelog:** https://github.com/${{ github.repository }}/compare/${prev_version}...${version}" >> /tmp/release_notes.md
+          fi
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dest/*
+          body_path: /tmp/release_notes.md
+          prerelease: ${{ contains(github.ref_name, '-') }}
