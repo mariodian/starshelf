@@ -3,6 +3,9 @@ import { mkdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { defineConfig } from "wxt";
 
+const CHROME_WEBSTORE_KEY =
+  "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA5G+CB7YYHI93dA0e0lKyVt4THAm7YAXaritPRa8c6l6Q/gViVYjB+69nR99rVvGJEt14QF0X0gNR4QUV42pwDFuBl/90/0H2lKeryz3fUg4Ke09GcQBjIKET3k93yC69ke/vF89qgDNrHfOnHIIhNPyNnDN64Aui40WoJcNaTLwPHZbAKn0ayL4OvNA1yFWXfW1d898pDDs5SNuTrygtqLASrJoY2RCh7Wov75wI68GoUgYnFZ07J13k5qwtNE0QnG0PZxql+kvX8Kuiz8hVKR1i1vVHNDErVRSH0HwcLCS1aGs+PM0wZKRYML9SA0NPR8NPLJ5DQuuouJDqIGLYuwIDAQAB";
+
 const isDev = process.env.NODE_ENV === "development";
 const profileDir = resolve(".wxt/chrome-data");
 
@@ -22,7 +25,7 @@ export default defineConfig({
     // Fixed key in dev ensures the extension ID stays stable across reloads,
     // so Chrome keeps the extension pinned between dev sessions.
     // Set WXT_DEV_EXTENSION_KEY env var to override the built-in default.
-    key: isDev ? process.env.WXT_DEV_EXTENSION_KEY : undefined,
+    key: isDev ? process.env.WXT_DEV_EXTENSION_KEY : CHROME_WEBSTORE_KEY,
     permissions: ["storage", "activeTab"],
     host_permissions: [
       "https://github.com/*",
