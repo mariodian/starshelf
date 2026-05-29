@@ -58,11 +58,6 @@ export default defineContentScript({
 
     initWatcher();
 
-    // showOverlay({ owner: "mariodian", repo: "test", status: "categorizing" });
-    // showOverlay({ owner: "mariodian", repo: "test", status: "saved" });
-    // showOverlay({ owner: "mariodian", repo: "test", status: "error" });
-    // showOverlay({ owner: "mariodian", repo: "test", status: "removed" });
-
     browser.runtime.onMessage.addListener((msg: BackgroundMessage) => {
       if (msg.type === "updateStarStatus") {
         showOverlay(msg.payload);

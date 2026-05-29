@@ -84,7 +84,7 @@ async function handleStarClick(
     }
 
     // Star
-    await sendStatus(tabId, owner, repo, "");
+    await sendStatus(tabId, owner, repo, "categorizing");
 
     // Validate token scope
     try {

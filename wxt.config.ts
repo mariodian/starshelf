@@ -11,7 +11,7 @@ if (isDev) {
 
 // See https://wxt.dev/api/config.html
 export default defineConfig({
-  manifest: {
+  manifest: () => ({
     name: "Starshelf",
     description: "Auto-categorize GitHub starred repos with AI",
     version: "0.0.1",
@@ -31,16 +31,16 @@ export default defineConfig({
     background: {
       service_worker: "background.ts",
     },
-  },
+  }),
+  srcDir: "src",
+  outDir: "dist",
   // Dev-only: browser startup config. Does not affect production builds.
-  webExt: isDev
-    ? {
-        // Persistent profile so settings, logins, devtools extensions, and
-        // extension pin state survive across dev restarts.
-        chromiumArgs: [`--user-data-dir=${profileDir}`],
-        startUrls: process.env.VITE_START_URL
-          ? [process.env.VITE_START_URL]
-          : undefined,
-      }
-    : undefined,
+  webExt: {
+    disabled: !!process.env.VITE_BROWSER_DISABLED || false,
+    // Persistent profile so settings, logins, devtools extensions, and
+    // extension pin state survive across dev restarts.
+    chromiumArgs: [`--user-data-dir=${profileDir}`],
+    startUrls: [process.env.VITE_START_URL || "https://github.com/"],
+    keepProfileChanges: true,
+  },
 });
