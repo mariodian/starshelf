@@ -40,6 +40,17 @@ jobs:
         id: version
         run: echo "version=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
 
+      - name: Validate package.json version matches tag
+        run: |
+          tag_version="${{ steps.version.outputs.version }}"
+          pkg_version=$(node -p "require('./package.json').version")
+          if [ "$tag_version" != "v$pkg_version" ]; then
+            echo "Tag $tag_version does not match package.json version $pkg_version" >&2
+            echo "Bump package.json version before tagging." >&2
+            exit 1
+          fi
+          echo "package.json version $pkg_version matches tag $tag_version ✓"
+
       - name: Validate and load user release notes
         id: notes
         run: |

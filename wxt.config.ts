@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { mkdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { defineConfig } from "wxt";
@@ -9,12 +10,15 @@ if (isDev) {
   mkdirSync(profileDir, { recursive: true });
 }
 
+// Read version from package.json so releases always match the tag
+const pkg = JSON.parse(readFileSync("package.json", "utf-8"));
+
 // See https://wxt.dev/api/config.html
 export default defineConfig({
   manifest: () => ({
     name: "Starshelf",
     description: "Auto-categorize GitHub starred repos with AI",
-    version: "0.0.1",
+    version: pkg.version,
     // Fixed key in dev ensures the extension ID stays stable across reloads,
     // so Chrome keeps the extension pinned between dev sessions.
     // Set WXT_DEV_EXTENSION_KEY env var to override the built-in default.
