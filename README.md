@@ -42,6 +42,25 @@ Load the `dist/` folder as an unpacked extension in `chrome://extensions`.
 
 GitHub stars pile up fast. Before you know it you have hundreds of repos and no way to find that one library you starred six months ago. Starshelf watches your stars and uses AI to label every repo the moment you star it — so you can browse by category instead of digging through a flat list.
 
+<table border="0" align="center" cellspacing="0" cellpadding="10">
+  <tr>
+    <td colspan="4" align="center" valign="middle">
+      <a href="media/screenshots/screen-1.webp"><img src="./media/screenshots/screen-1.webp" alt="Automatically categorize starred repos with AI" width="100%"></a>
+    </td>
+  </tr>
+  <tr>
+    <td width="25%" align="center" valign="middle">
+      <a href="media/screenshots/screen-2.webp"><img src="./media/screenshots/screen-2.webp" alt="Bring your own API key" width="100%"></a>
+    </td>
+    <td width="25%" align="center" valign="middle">
+      <a href="media/screenshots/screen-3.webp"><img src="./media/screenshots/screen-3.webp" alt="Shelving into the right category" width="100%"></a>
+    </td>
+    <td width="25%" align="center" valign="middle">
+      <a href="media/screenshots/screen-4.webp"><img src="./media/screenshots/screen-4.webp" alt="Your stars, finally organized" width="100%"></a>
+    </td>
+  </tr>
+</table>
+
 ## ✨ Features
 
 - **Star-and-forget**: detects star clicks on GitHub and categorizes repos automatically
