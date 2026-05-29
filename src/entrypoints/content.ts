@@ -1,7 +1,7 @@
 import type { BackgroundMessage } from "@/shared/types/messages";
 import { logger } from "@/shared/logger";
+import "../shared/overlay.css";
 
-const STYLE_ID = "starshelf-spinner";
 const OVERLAY_ID = "starshelf-overlay";
 
 const TIMEOUTS = {
@@ -13,40 +13,6 @@ const TIMEOUTS = {
 export default defineContentScript({
   matches: ["https://github.com/*"],
   main() {
-    if (!document.getElementById(STYLE_ID)) {
-      const style = document.createElement("style");
-      style.id = STYLE_ID;
-      style.textContent = `
-@keyframes starshelf-cat-spin {
-  to {
-    transform: rotate(360deg)
-  }
-}
-#starshelf-overlay {
-  background: var(--tooltip-bgColor, var(--color-tooltip-bg, rgba(0,0,0,0.85)));
-  color: var(--tooltip-fgColor, var(--color-tooltip-fg, #e94560));
-  padding: var(--overlay-paddingBlock-condensed) var(--overlay-padding-condensed);
-}
-#${STYLE_ID} {
-  display: inline-block;
-  position: relative;
-  top: -1px;
-  width: 12px;
-  height: 12px;
-  border: 2px solid #e94560;
-  border-top-color: transparent;
-  border-radius: 50%;
-  animation: starshelf-cat-spin 1s linear infinite;
-  margin-right: 6px;
-  vertical-align: middle;
-}
-#starshelf-text {
-  white-space: wrap;
-}
-`;
-      document.head.appendChild(style);
-    }
-
     let currentUrl = location.href;
     const navObserver = new MutationObserver(() => {
       if (location.href !== currentUrl) {
@@ -234,12 +200,12 @@ function showOverlay(payload: BackgroundMessage["payload"]) {
   <span id="starshelf-text">Shelving...</span>
 </div>
 `;
-      el.style.color = "#e94560";
+      el.style.color = "var(--starshelf-link)";
       el.style.opacity = "1";
       break;
     case "saved":
       el.textContent = `\u2605 ${category || "Added to list"}`;
-      el.style.color = "#4ade80";
+      el.style.color = "var(--starshelf-link)";
       el.style.opacity = "1";
       setTimeout(() => {
         el!.style.opacity = "0";
@@ -247,7 +213,7 @@ function showOverlay(payload: BackgroundMessage["payload"]) {
       break;
     case "error":
       el.textContent = `\u26A0 ${error || "Error"}`;
-      el.style.color = "#ef4444";
+      el.style.color = "var(--starshelf-error)";
       el.style.opacity = "1";
       setTimeout(() => {
         el!.style.opacity = "0";
@@ -255,7 +221,7 @@ function showOverlay(payload: BackgroundMessage["payload"]) {
       break;
     case "removed":
       el.textContent = "Unstarred";
-      el.style.color = "#9ca3af";
+      el.style.color = "var(--starshelf-muted)";
       el.style.opacity = "1";
       setTimeout(() => {
         el!.style.opacity = "0";

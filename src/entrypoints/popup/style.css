@@ -56,6 +56,13 @@
   box-sizing: border-box;
 }
 
+html,
+body {
+  width: 360px;
+  max-height: 520px;
+  overflow-y: auto;
+}
+
 body {
   font-family:
     -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
@@ -63,7 +70,7 @@ body {
   color: var(--text-primary);
   margin: 0;
   padding: 16px;
-  width: 420px;
+  padding-bottom: 4px;
 }
 
 .container {
@@ -136,13 +143,19 @@ label {
   min-width: 64px;
 }
 
+input {
+  padding: 4px 8px;
+}
+select {
+  padding: 4px;
+}
+
 input,
 select {
   background: var(--bg-input);
   color: var(--text-primary);
   border: 1px solid var(--border-primary);
   border-radius: 6px;
-  padding: 5px 8px;
   font-size: 12px;
   flex: 1;
   min-width: 0;
