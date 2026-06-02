@@ -24,7 +24,6 @@ export interface RepoMetadata {
   description?: string;
   language?: string;
   topics: string[];
-  readmeExcerpt?: string;
 }
 
 export async function fetchRepoMetadata(
@@ -69,7 +68,6 @@ export async function fetchRepoMetadata(
     description: repoData.description,
     language: repoData.language,
     topics,
-    readmeExcerpt: undefined,
   };
 }
 

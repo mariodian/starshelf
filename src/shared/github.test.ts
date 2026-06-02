@@ -101,7 +101,6 @@ describe("fetchRepoMetadata", () => {
       description: "A declarative, efficient, and flexible JavaScript library",
       language: "JavaScript",
       topics: ["ui", "frontend"],
-      readmeExcerpt: undefined,
     });
   });
 
