@@ -513,6 +513,11 @@ describe("streamUncategorizedRepos", () => {
 describe("batchCategorize", () => {
   beforeEach(() => {
     vi.stubGlobal("fetch", vi.fn());
+    vi.stubGlobal("setTimeout", ((cb: () => void) => {
+      cb();
+      return 0;
+    }) as typeof setTimeout);
+    vi.stubGlobal("clearTimeout", vi.fn());
   });
 
   afterEach(() => {
