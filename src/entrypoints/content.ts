@@ -1,5 +1,6 @@
 import type { BackgroundMessage } from "@/shared/types/messages";
 import { logger } from "@/shared/logger";
+import { parseRepoFromUrl } from "@/shared/github";
 import "../shared/overlay.css";
 
 const WRAPPER_ID = "starshelf-wrapper";
@@ -67,12 +68,6 @@ function readButtonState(btn: HTMLButtonElement): boolean {
   return (
     btn.getAttribute("data-hydro-click")?.includes("UNSTAR_BUTTON") ?? false
   );
-}
-
-function parseRepoFromUrl(url: string) {
-  const m = url.match(/^https:\/\/github\.com\/([^/]+)\/([^/]+)/);
-  if (!m) return null;
-  return { owner: m[1], repo: m[2].replace(/\/$/, "") };
 }
 
 function onStarClick(event: Event) {
