@@ -66,6 +66,97 @@ interface StarcorderState {
 
 const states = new Map<string, StarcorderState>();
 
+async function categorizeAndAssign(
+  tabId: number,
+  owner: string,
+  repo: string,
+  token: string,
+  settings: ExtensionSettings,
+  client: AiProviderClient,
+  repoNodeId: string,
+  metadata: RepoMetadata,
+  lists: GitHubList[],
+  previousCategories?: string[],
+): Promise<{
+  category: string;
+  listId: string;
+  listName: string;
+  isNewList: boolean;
+} | null> {
+  const existingNames = lists.map((l) => l.name);
+
+  let category: string;
+  try {
+    category = await categorizeRepository(
+      client,
+      metadata,
+      owner,
+      repo,
+      existingNames,
+      settings.enableEmojis,
+      settings.enableCategoryPrefix,
+      settings.autoFormat,
+      previousCategories ?? [],
+    );
+    logger.log("[stars] bg | AI result:", category);
+  } catch (err) {
+    logger.error("[stars] bg | AI categorize FAILED:", err);
+    const msg = err instanceof Error ? err.message : "AI categorization failed";
+    await sendStatus(tabId, owner, repo, "error", undefined, msg);
+    return null;
+  }
+
+  const matchedList = fuzzyMatchListName(category, lists);
+  logger.log(
+    "[stars] bg | fuzzy match:",
+    matchedList ? matchedList.name : "none",
+  );
+
+  if (matchedList) {
+    try {
+      logger.log("[stars] bg | updateUserListsForItem...");
+      await updateUserListsForItem(repoNodeId, [matchedList.id], token);
+      logger.log("[stars] bg | added to list:", matchedList.name);
+    } catch (err) {
+      logger.error("[stars] bg | add to list FAILED:", err);
+      const msg = err instanceof Error ? err.message : "Adding to list failed";
+      await sendStatus(tabId, owner, repo, "error", undefined, msg);
+      return null;
+    }
+
+    await sendStatus(tabId, owner, repo, "saved", matchedList.name);
+    return {
+      category,
+      listId: matchedList.id,
+      listName: matchedList.name,
+      isNewList: false,
+    };
+  }
+
+  let newList: GitHubList;
+  try {
+    const isPrivate = settings.listPrivacy === "private";
+    logger.log("[stars] bg | createUserList:", category);
+    newList = await createUserList(category, isPrivate, token);
+    logger.log("[stars] bg | updateUserListsForItem...");
+    await updateUserListsForItem(repoNodeId, [newList.id], token);
+    logger.log("[stars] bg | created+added to list:", newList.name);
+  } catch (err) {
+    logger.error("[stars] bg | create list FAILED:", err);
+    const msg = err instanceof Error ? err.message : "Creating list failed";
+    await sendStatus(tabId, owner, repo, "error", undefined, msg);
+    return null;
+  }
+
+  await sendStatus(tabId, owner, repo, "saved", category);
+  return {
+    category,
+    listId: newList.id,
+    listName: newList.name,
+    isNewList: true,
+  };
+}
+
 async function handleStarClick(
   payload: { owner: string; repo: string; action: "star" | "unstar" },
   tabId?: number,
@@ -180,85 +271,31 @@ async function handleStarClick(
     }
 
     // AI categorize
-    const existingNames = lists.map((l) => l.name);
-    let category: string;
-    try {
-      logger.log(
-        "[stars] bg | AI categorize | provider:",
-        settings.activeProvider,
-        "| model:",
-        settings.providers[settings.activeProvider]?.model,
-      );
-      category = await categorizeRepository(
-        client,
-        metadata,
-        owner,
-        repo,
-        existingNames,
-        settings.enableEmojis,
-        settings.enableCategoryPrefix,
-        settings.autoFormat,
-      );
-      logger.log("[stars] bg | AI result:", category);
-    } catch (err) {
-      logger.error("[stars] bg | AI categorize FAILED:", err);
-      const msg =
-        err instanceof Error ? err.message : "AI categorization failed";
-      await sendStatus(tabId, owner, repo, "error", undefined, msg);
-      return;
-    }
-
-    // Fuzzy-match category against existing lists
-    const matchedList = fuzzyMatchListName(category, lists);
     logger.log(
-      "[stars] bg | fuzzy match:",
-      matchedList ? matchedList.name : "none",
+      "[stars] bg | AI categorize | provider:",
+      settings.activeProvider,
+      "| model:",
+      settings.providers[settings.activeProvider]?.model,
     );
-
-    if (matchedList) {
-      try {
-        logger.log("[stars] bg | updateUserListsForItem...");
-        await updateUserListsForItem(repoNodeId, [matchedList.id], token);
-        logger.log("[stars] bg | added to list:", matchedList.name);
-      } catch (err) {
-        logger.error("[stars] bg | add to list FAILED:", err);
-        const msg =
-          err instanceof Error ? err.message : "Adding to list failed";
-        await sendStatus(tabId, owner, repo, "error", undefined, msg);
-        return;
-      }
-
-      await sendStatus(tabId, owner, repo, "saved", matchedList.name);
+    const result = await categorizeAndAssign(
+      tabId,
+      owner,
+      repo,
+      token,
+      settings,
+      client,
+      repoNodeId,
+      metadata,
+      lists,
+    );
+    if (result) {
       states.set(fullName, {
         metadata,
         repoNodeId,
-        listId: matchedList.id,
-        listName: matchedList.name,
-        isNewList: false,
+        listId: result.listId,
+        listName: result.listName,
+        isNewList: result.isNewList,
       });
-    } else {
-      try {
-        const isPrivate = settings.listPrivacy === "private";
-        logger.log("[stars] bg | createUserList:", category);
-        const newList = await createUserList(category, isPrivate, token);
-        logger.log("[stars] bg | updateUserListsForItem...");
-        await updateUserListsForItem(repoNodeId, [newList.id], token);
-        logger.log("[stars] bg | created+added to list:", newList.name);
-
-        await sendStatus(tabId, owner, repo, "saved", category);
-        states.set(fullName, {
-          metadata,
-          repoNodeId,
-          listId: newList.id,
-          listName: newList.name,
-          isNewList: true,
-        });
-      } catch (err) {
-        logger.error("[stars] bg | create list FAILED:", err);
-        const msg = err instanceof Error ? err.message : "Creating list failed";
-        await sendStatus(tabId, owner, repo, "error", undefined, msg);
-        return;
-      }
     }
   } catch (err) {
     logger.error("Extension error:", err);
@@ -370,80 +407,28 @@ async function handleRegenerate(
       return;
     }
 
-    const existingNames = lists.map((l) => l.name);
     const allRejected = [currentCategory, ...previousCategories];
+    logger.log("[regenerate] bg | AI categorize | rejected:", allRejected);
 
-    let category: string;
-    try {
-      logger.log("[regenerate] bg | AI categorize | rejected:", allRejected);
-      category = await categorizeRepository(
-        client,
-        prevState.metadata,
-        owner,
-        repo,
-        existingNames,
-        settings.enableEmojis,
-        settings.enableCategoryPrefix,
-        settings.autoFormat,
-        allRejected,
-      );
-      logger.log("[regenerate] bg | AI result:", category);
-    } catch (err) {
-      logger.error("[regenerate] bg | AI categorize FAILED:", err);
-      const msg =
-        err instanceof Error ? err.message : "AI categorization failed";
-      await sendStatus(tabId, owner, repo, "error", undefined, msg);
-      return;
-    }
-
-    // Fuzzy-match against existing lists
-    const matchedList = fuzzyMatchListName(category, lists);
-    logger.log(
-      "[regenerate] bg | fuzzy match:",
-      matchedList ? matchedList.name : "none",
+    const result = await categorizeAndAssign(
+      tabId,
+      owner,
+      repo,
+      token,
+      settings,
+      client,
+      prevState.repoNodeId,
+      prevState.metadata,
+      lists,
+      allRejected,
     );
-
-    if (matchedList) {
-      try {
-        await updateUserListsForItem(
-          prevState.repoNodeId,
-          [matchedList.id],
-          token,
-        );
-      } catch (err) {
-        logger.error("[regenerate] bg | add to list FAILED:", err);
-        const msg =
-          err instanceof Error ? err.message : "Adding to list failed";
-        await sendStatus(tabId, owner, repo, "error", undefined, msg);
-        return;
-      }
-
-      await sendStatus(tabId, owner, repo, "saved", matchedList.name);
+    if (result) {
       states.set(fullName, {
         ...prevState,
-        listId: matchedList.id,
-        listName: matchedList.name,
-        isNewList: false,
+        listId: result.listId,
+        listName: result.listName,
+        isNewList: result.isNewList,
       });
-    } else {
-      try {
-        const isPrivate = settings.listPrivacy === "private";
-        const newList = await createUserList(category, isPrivate, token);
-        await updateUserListsForItem(prevState.repoNodeId, [newList.id], token);
-
-        await sendStatus(tabId, owner, repo, "saved", category);
-        states.set(fullName, {
-          ...prevState,
-          listId: newList.id,
-          listName: newList.name,
-          isNewList: true,
-        });
-      } catch (err) {
-        logger.error("[regenerate] bg | create list FAILED:", err);
-        const msg = err instanceof Error ? err.message : "Creating list failed";
-        await sendStatus(tabId, owner, repo, "error", undefined, msg);
-        return;
-      }
     }
   } catch (err) {
     logger.error("[regenerate] Error:", err);
