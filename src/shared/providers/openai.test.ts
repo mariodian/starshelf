@@ -1,4 +1,9 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi } from "vitest";
+import {
+  setupFetchMock,
+  mockJsonResponse,
+  mockHttpError,
+} from "@/shared/test-utils";
 import { OpenAIClient } from "@/shared/providers/openai";
 import type { RepoMetadata } from "@/shared/github";
 
@@ -12,34 +17,26 @@ function makeClient() {
   return new OpenAIClient("sk-test", "gpt-5-mini");
 }
 
-beforeEach(() => {
-  vi.stubGlobal("fetch", vi.fn());
-});
-
-afterEach(() => {
-  vi.unstubAllGlobals();
-});
+setupFetchMock();
 
 describe("OpenAIClient.categorize", () => {
   it("returns a cleaned category from the API response", async () => {
-    vi.mocked(fetch).mockResolvedValue({
-      ok: true,
-      json: async () => ({
+    vi.mocked(fetch).mockResolvedValue(
+      mockJsonResponse({
         choices: [{ message: { content: "AI Library" } }],
       }),
-    } as Response);
+    );
 
     const result = await makeClient().categorize(metadata, "u", "r", []);
     expect(result).toBe("AI Library");
   });
 
   it("sends the correct request body", async () => {
-    vi.mocked(fetch).mockResolvedValue({
-      ok: true,
-      json: async () => ({
+    vi.mocked(fetch).mockResolvedValue(
+      mockJsonResponse({
         choices: [{ message: { content: "Tool" } }],
       }),
-    } as Response);
+    );
 
     await makeClient().categorize(metadata, "owner", "repo", []);
 
@@ -53,11 +50,7 @@ describe("OpenAIClient.categorize", () => {
   });
 
   it("throws on non-ok response", async () => {
-    vi.mocked(fetch).mockResolvedValue({
-      ok: false,
-      status: 429,
-      text: async () => "Rate limited",
-    } as Response);
+    vi.mocked(fetch).mockResolvedValue(mockHttpError(429, "Rate limited"));
 
     await expect(
       makeClient().categorize(metadata, "u", "r", []),
@@ -65,10 +58,7 @@ describe("OpenAIClient.categorize", () => {
   });
 
   it("throws when the response has no choices", async () => {
-    vi.mocked(fetch).mockResolvedValue({
-      ok: true,
-      json: async () => ({ choices: [] }),
-    } as Response);
+    vi.mocked(fetch).mockResolvedValue(mockJsonResponse({ choices: [] }));
 
     await expect(
       makeClient().categorize(metadata, "u", "r", []),
@@ -76,10 +66,9 @@ describe("OpenAIClient.categorize", () => {
   });
 
   it("throws when message content is missing", async () => {
-    vi.mocked(fetch).mockResolvedValue({
-      ok: true,
-      json: async () => ({ choices: [{ message: {} }] }),
-    } as Response);
+    vi.mocked(fetch).mockResolvedValue(
+      mockJsonResponse({ choices: [{ message: {} }] }),
+    );
 
     await expect(
       makeClient().categorize(metadata, "u", "r", []),
@@ -89,9 +78,8 @@ describe("OpenAIClient.categorize", () => {
 
 describe("OpenAIClient.listModels", () => {
   it("returns sorted gpt/o1/o3 model IDs", async () => {
-    vi.mocked(fetch).mockResolvedValue({
-      ok: true,
-      json: async () => ({
+    vi.mocked(fetch).mockResolvedValue(
+      mockJsonResponse({
         data: [
           { id: "o3-mini" },
           { id: "dall-e-3" },
@@ -100,27 +88,21 @@ describe("OpenAIClient.listModels", () => {
           { id: "o1-preview" },
         ],
       }),
-    } as Response);
+    );
 
     const models = await makeClient().listModels();
     expect(models).toEqual(["gpt-4o", "gpt-5-mini", "o1-preview", "o3-mini"]);
   });
 
   it("returns empty array on non-ok response", async () => {
-    vi.mocked(fetch).mockResolvedValue({
-      ok: false,
-      status: 401,
-    } as Response);
+    vi.mocked(fetch).mockResolvedValue(mockHttpError(401));
 
     const models = await makeClient().listModels();
     expect(models).toEqual([]);
   });
 
   it("returns empty array when data is not an array", async () => {
-    vi.mocked(fetch).mockResolvedValue({
-      ok: true,
-      json: async () => ({ data: null }),
-    } as Response);
+    vi.mocked(fetch).mockResolvedValue(mockJsonResponse({ data: null }));
 
     const models = await makeClient().listModels();
     expect(models).toEqual([]);

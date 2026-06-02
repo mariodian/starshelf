@@ -1,4 +1,9 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi } from "vitest";
+import {
+  setupFetchMock,
+  mockJsonResponse,
+  mockHttpError,
+} from "@/shared/test-utils";
 import { OpenCodeClient } from "@/shared/providers/opencode";
 import type { RepoMetadata } from "@/shared/github";
 
@@ -12,13 +17,7 @@ function makeClient(endpoint: "zen" | "zen-go" = "zen") {
   return new OpenCodeClient("sk-test", "deepseek-v4-flash", endpoint);
 }
 
-beforeEach(() => {
-  vi.stubGlobal("fetch", vi.fn());
-});
-
-afterEach(() => {
-  vi.unstubAllGlobals();
-});
+setupFetchMock();
 
 describe("OpenCodeClient.baseUrl", () => {
   it("returns the Zen URL by default", () => {
@@ -32,21 +31,19 @@ describe("OpenCodeClient.baseUrl", () => {
 
 describe("OpenCodeClient.categorize", () => {
   it("returns a cleaned category from the content field", async () => {
-    vi.mocked(fetch).mockResolvedValue({
-      ok: true,
-      json: async () => ({
+    vi.mocked(fetch).mockResolvedValue(
+      mockJsonResponse({
         choices: [{ message: { content: "Compiler Tool" } }],
       }),
-    } as Response);
+    );
 
     const result = await makeClient().categorize(metadata, "u", "r", []);
     expect(result).toBe("Compiler Tool");
   });
 
   it("falls back to reasoning_content when content is absent", async () => {
-    vi.mocked(fetch).mockResolvedValue({
-      ok: true,
-      json: async () => ({
+    vi.mocked(fetch).mockResolvedValue(
+      mockJsonResponse({
         choices: [
           {
             message: {
@@ -56,16 +53,15 @@ describe("OpenCodeClient.categorize", () => {
           },
         ],
       }),
-    } as Response);
+    );
 
     const result = await makeClient().categorize(metadata, "u", "r", []);
     expect(result).toBe("Compiler Tool");
   });
 
   it("extracts category from reasoning using regex patterns", async () => {
-    vi.mocked(fetch).mockResolvedValue({
-      ok: true,
-      json: async () => ({
+    vi.mocked(fetch).mockResolvedValue(
+      mockJsonResponse({
         choices: [
           {
             message: {
@@ -74,16 +70,15 @@ describe("OpenCodeClient.categorize", () => {
           },
         ],
       }),
-    } as Response);
+    );
 
     const result = await makeClient().categorize(metadata, "u", "r", []);
     expect(result).toBe("DevTools");
   });
 
   it("falls back to the last line of reasoning text", async () => {
-    vi.mocked(fetch).mockResolvedValue({
-      ok: true,
-      json: async () => ({
+    vi.mocked(fetch).mockResolvedValue(
+      mockJsonResponse({
         choices: [
           {
             message: {
@@ -93,19 +88,18 @@ describe("OpenCodeClient.categorize", () => {
           },
         ],
       }),
-    } as Response);
+    );
 
     const result = await makeClient().categorize(metadata, "u", "r", []);
     expect(result).toBe("Rust CLI");
   });
 
   it("uses the correct endpoint for requests", async () => {
-    vi.mocked(fetch).mockResolvedValue({
-      ok: true,
-      json: async () => ({
+    vi.mocked(fetch).mockResolvedValue(
+      mockJsonResponse({
         choices: [{ message: { content: "Tool" } }],
       }),
-    } as Response);
+    );
 
     await makeClient("zen-go").categorize(metadata, "u", "r", []);
 
@@ -116,11 +110,7 @@ describe("OpenCodeClient.categorize", () => {
   });
 
   it("throws on non-ok response", async () => {
-    vi.mocked(fetch).mockResolvedValue({
-      ok: false,
-      status: 402,
-      text: async () => "Payment required",
-    } as Response);
+    vi.mocked(fetch).mockResolvedValue(mockHttpError(402, "Payment required"));
 
     await expect(
       makeClient().categorize(metadata, "u", "r", []),
@@ -128,10 +118,9 @@ describe("OpenCodeClient.categorize", () => {
   });
 
   it("throws when there is no content and no reasoning", async () => {
-    vi.mocked(fetch).mockResolvedValue({
-      ok: true,
-      json: async () => ({ choices: [{ message: {} }] }),
-    } as Response);
+    vi.mocked(fetch).mockResolvedValue(
+      mockJsonResponse({ choices: [{ message: {} }] }),
+    );
 
     await expect(
       makeClient().categorize(metadata, "u", "r", []),
@@ -139,10 +128,7 @@ describe("OpenCodeClient.categorize", () => {
   });
 
   it("throws when choices array is empty", async () => {
-    vi.mocked(fetch).mockResolvedValue({
-      ok: true,
-      json: async () => ({ choices: [] }),
-    } as Response);
+    vi.mocked(fetch).mockResolvedValue(mockJsonResponse({ choices: [] }));
 
     await expect(
       makeClient().categorize(metadata, "u", "r", []),
@@ -152,16 +138,15 @@ describe("OpenCodeClient.categorize", () => {
 
 describe("OpenCodeClient.listModels", () => {
   it("returns sorted model IDs", async () => {
-    vi.mocked(fetch).mockResolvedValue({
-      ok: true,
-      json: async () => ({
+    vi.mocked(fetch).mockResolvedValue(
+      mockJsonResponse({
         data: [
           { id: "opencode/gpt-5.1-codex" },
           { id: "deepseek-v4-flash" },
           { id: "anthropic/claude-sonnet-4" },
         ],
       }),
-    } as Response);
+    );
 
     const models = await makeClient().listModels();
     expect(models).toEqual([
@@ -172,10 +157,7 @@ describe("OpenCodeClient.listModels", () => {
   });
 
   it("uses zen-go base URL for listModels", async () => {
-    vi.mocked(fetch).mockResolvedValue({
-      ok: true,
-      json: async () => ({ data: [] }),
-    } as Response);
+    vi.mocked(fetch).mockResolvedValue(mockJsonResponse({ data: [] }));
 
     await makeClient("zen-go").listModels();
 
@@ -186,20 +168,16 @@ describe("OpenCodeClient.listModels", () => {
   });
 
   it("returns empty array on non-ok response", async () => {
-    vi.mocked(fetch).mockResolvedValue({
-      ok: false,
-      status: 500,
-    } as Response);
+    vi.mocked(fetch).mockResolvedValue(mockHttpError(500));
 
     const models = await makeClient().listModels();
     expect(models).toEqual([]);
   });
 
   it("returns empty array when data is not an array", async () => {
-    vi.mocked(fetch).mockResolvedValue({
-      ok: true,
-      json: async () => ({ data: { not: "array" } }),
-    } as Response);
+    vi.mocked(fetch).mockResolvedValue(
+      mockJsonResponse({ data: { not: "array" } }),
+    );
 
     const models = await makeClient().listModels();
     expect(models).toEqual([]);

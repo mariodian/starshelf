@@ -1,10 +1,13 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi } from "vitest";
+import { setupFetchMock, mockJsonResponse } from "./test-utils";
 import {
   parseRepoFromUrl,
   isRepoPage,
   fetchRepoMetadata,
   checkStarStatus,
 } from "@/shared/github";
+
+setupFetchMock();
 
 describe("parseRepoFromUrl", () => {
   it("extracts owner and repo from a standard GitHub URL", () => {
@@ -72,28 +75,16 @@ describe("isRepoPage", () => {
 });
 
 describe("fetchRepoMetadata", () => {
-  beforeEach(() => {
-    vi.stubGlobal("fetch", vi.fn());
-  });
-
-  afterEach(() => {
-    vi.unstubAllGlobals();
-  });
-
   it("returns repo metadata with description and language", async () => {
     vi.mocked(fetch)
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({
+      .mockResolvedValueOnce(
+        mockJsonResponse({
           description:
             "A declarative, efficient, and flexible JavaScript library",
           language: "JavaScript",
         }),
-      } as Response)
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({ names: ["ui", "frontend"] }),
-      } as Response);
+      )
+      .mockResolvedValueOnce(mockJsonResponse({ names: ["ui", "frontend"] }));
 
     const result = await fetchRepoMetadata("facebook", "react");
 
@@ -106,10 +97,9 @@ describe("fetchRepoMetadata", () => {
 
   it("returns empty topics when the topics API fails", async () => {
     vi.mocked(fetch)
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({ description: "test", language: "Rust" }),
-      } as Response)
+      .mockResolvedValueOnce(
+        mockJsonResponse({ description: "test", language: "Rust" }),
+      )
       .mockRejectedValueOnce(new Error("Network error"));
 
     const result = await fetchRepoMetadata("user", "repo");
@@ -120,14 +110,8 @@ describe("fetchRepoMetadata", () => {
 
   it("sends the Authorization header when a token is provided", async () => {
     vi.mocked(fetch)
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({}),
-      } as Response)
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({ names: [] }),
-      } as Response);
+      .mockResolvedValueOnce(mockJsonResponse({}))
+      .mockResolvedValueOnce(mockJsonResponse({ names: [] }));
 
     await fetchRepoMetadata("owner", "repo", "ghp_test");
 
@@ -138,14 +122,8 @@ describe("fetchRepoMetadata", () => {
 
   it("handles a non-ok repo response gracefully", async () => {
     vi.mocked(fetch)
-      .mockResolvedValueOnce({
-        ok: false,
-        json: async () => ({}),
-      } as Response)
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({ names: [] }),
-      } as Response);
+      .mockResolvedValueOnce(mockJsonResponse({}, 500))
+      .mockResolvedValueOnce(mockJsonResponse({ names: [] }));
 
     const result = await fetchRepoMetadata("user", "repo");
 
@@ -155,19 +133,8 @@ describe("fetchRepoMetadata", () => {
 });
 
 describe("checkStarStatus", () => {
-  beforeEach(() => {
-    vi.stubGlobal("fetch", vi.fn());
-  });
-
-  afterEach(() => {
-    vi.unstubAllGlobals();
-  });
-
   it("returns true when the repo is starred (204)", async () => {
-    vi.mocked(fetch).mockResolvedValue({
-      ok: true,
-      status: 204,
-    } as Response);
+    vi.mocked(fetch).mockResolvedValue(mockJsonResponse(undefined, 204));
 
     const result = await checkStarStatus("owner", "repo", "token");
 
@@ -183,10 +150,7 @@ describe("checkStarStatus", () => {
   });
 
   it("returns false when the repo is not starred (404)", async () => {
-    vi.mocked(fetch).mockResolvedValue({
-      ok: false,
-      status: 404,
-    } as Response);
+    vi.mocked(fetch).mockResolvedValue(mockJsonResponse(undefined, 404));
 
     const result = await checkStarStatus("owner", "repo", "token");
 

@@ -1,4 +1,9 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi } from "vitest";
+import {
+  setupFetchMock,
+  mockJsonResponse,
+  mockHttpError,
+} from "@/shared/test-utils";
 import { AnthropicClient } from "@/shared/providers/anthropic";
 import type { RepoMetadata } from "@/shared/github";
 
@@ -12,30 +17,22 @@ function makeClient() {
   return new AnthropicClient("sk-test", "claude-haiku-4-5");
 }
 
-beforeEach(() => {
-  vi.stubGlobal("fetch", vi.fn());
-});
-
-afterEach(() => {
-  vi.unstubAllGlobals();
-});
+setupFetchMock();
 
 describe("AnthropicClient.categorize", () => {
   it("returns a cleaned category from the API response", async () => {
-    vi.mocked(fetch).mockResolvedValue({
-      ok: true,
-      json: async () => ({ content: [{ text: "CLI Tool" }] }),
-    } as Response);
+    vi.mocked(fetch).mockResolvedValue(
+      mockJsonResponse({ content: [{ text: "CLI Tool" }] }),
+    );
 
     const result = await makeClient().categorize(metadata, "u", "r", []);
     expect(result).toBe("CLI Tool");
   });
 
   it("sends the correct request body", async () => {
-    vi.mocked(fetch).mockResolvedValue({
-      ok: true,
-      json: async () => ({ content: [{ text: "Tool" }] }),
-    } as Response);
+    vi.mocked(fetch).mockResolvedValue(
+      mockJsonResponse({ content: [{ text: "Tool" }] }),
+    );
 
     await makeClient().categorize(metadata, "owner", "repo", []);
 
@@ -49,11 +46,7 @@ describe("AnthropicClient.categorize", () => {
   });
 
   it("throws on non-ok response", async () => {
-    vi.mocked(fetch).mockResolvedValue({
-      ok: false,
-      status: 401,
-      text: async () => "Unauthorized",
-    } as Response);
+    vi.mocked(fetch).mockResolvedValue(mockHttpError(401, "Unauthorized"));
 
     await expect(
       makeClient().categorize(metadata, "u", "r", []),
@@ -61,10 +54,7 @@ describe("AnthropicClient.categorize", () => {
   });
 
   it("throws when the response content is empty", async () => {
-    vi.mocked(fetch).mockResolvedValue({
-      ok: true,
-      json: async () => ({ content: [] }),
-    } as Response);
+    vi.mocked(fetch).mockResolvedValue(mockJsonResponse({ content: [] }));
 
     await expect(
       makeClient().categorize(metadata, "u", "r", []),
@@ -72,10 +62,9 @@ describe("AnthropicClient.categorize", () => {
   });
 
   it("throws when content text is missing", async () => {
-    vi.mocked(fetch).mockResolvedValue({
-      ok: true,
-      json: async () => ({ content: [{ notText: true }] }),
-    } as Response);
+    vi.mocked(fetch).mockResolvedValue(
+      mockJsonResponse({ content: [{ notText: true }] }),
+    );
 
     await expect(
       makeClient().categorize(metadata, "u", "r", []),
@@ -85,16 +74,15 @@ describe("AnthropicClient.categorize", () => {
 
 describe("AnthropicClient.listModels", () => {
   it("returns sorted claude-ids", async () => {
-    vi.mocked(fetch).mockResolvedValue({
-      ok: true,
-      json: async () => ({
+    vi.mocked(fetch).mockResolvedValue(
+      mockJsonResponse({
         data: [
           { id: "claude-sonnet-4-20250514" },
           { id: "not-anthropic-model" },
           { id: "claude-haiku-4-5-20251001" },
         ],
       }),
-    } as Response);
+    );
 
     const models = await makeClient().listModels();
     expect(models).toEqual([
@@ -104,20 +92,14 @@ describe("AnthropicClient.listModels", () => {
   });
 
   it("returns empty array on non-ok response", async () => {
-    vi.mocked(fetch).mockResolvedValue({
-      ok: false,
-      status: 403,
-    } as Response);
+    vi.mocked(fetch).mockResolvedValue(mockHttpError(403));
 
     const models = await makeClient().listModels();
     expect(models).toEqual([]);
   });
 
   it("returns empty array when data is not an array", async () => {
-    vi.mocked(fetch).mockResolvedValue({
-      ok: true,
-      json: async () => ({ data: "not-array" }),
-    } as Response);
+    vi.mocked(fetch).mockResolvedValue(mockJsonResponse({ data: "not-array" }));
 
     const models = await makeClient().listModels();
     expect(models).toEqual([]);

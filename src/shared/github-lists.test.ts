@@ -1,5 +1,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
+  setupFetchMock,
+  mockGraphqlResponse,
+  mockGraphqlError,
+  mockHttpError,
+} from "./test-utils";
+import {
   validateToken,
   getViewerLists,
   createUserList,
@@ -15,34 +21,18 @@ import {
 } from "@/shared/github-lists";
 import type { AiProviderClient } from "@/shared/providers/base";
 
-beforeEach(() => {
-  vi.stubGlobal("fetch", vi.fn());
-});
-
-afterEach(() => {
-  vi.unstubAllGlobals();
-});
+setupFetchMock();
 
 function mockGraphqlResolve<T>(data: T) {
-  vi.mocked(fetch).mockResolvedValue({
-    ok: true,
-    json: async () => ({ data }),
-  } as Response);
+  vi.mocked(fetch).mockResolvedValue(mockGraphqlResponse(data));
 }
 
 function mockGraphqlReject(errors: Array<{ type?: string; message: string }>) {
-  vi.mocked(fetch).mockResolvedValue({
-    ok: true,
-    json: async () => ({ data: null, errors }),
-  } as Response);
+  vi.mocked(fetch).mockResolvedValue(mockGraphqlError(errors));
 }
 
 function mockFetchFail(status: number, body: string) {
-  vi.mocked(fetch).mockResolvedValue({
-    ok: false,
-    status,
-    text: async () => body,
-  } as Response);
+  vi.mocked(fetch).mockResolvedValue(mockHttpError(status, body));
 }
 
 describe("validateToken", () => {
@@ -226,13 +216,6 @@ describe("ScopeError", () => {
   });
 });
 
-function mockResp(data: unknown): Response {
-  return {
-    ok: true,
-    json: async () => ({ data }),
-  } as Response;
-}
-
 describe("getAllListedRepoIds", () => {
   it("returns an empty set when there are no lists", async () => {
     mockGraphqlResolve({
@@ -368,14 +351,6 @@ describe("getAllListedRepoIds", () => {
 });
 
 describe("streamUncategorizedRepos", () => {
-  beforeEach(() => {
-    vi.stubGlobal("fetch", vi.fn());
-  });
-
-  afterEach(() => {
-    vi.unstubAllGlobals();
-  });
-
   it("yields only uncategorized repos", async () => {
     mockGraphqlResolve({
       viewer: {
@@ -539,19 +514,19 @@ describe("batchCategorize", () => {
         const query: string = body.query || "";
 
         if (query.includes("createUserList")) {
-          return mockResp({
+          return mockGraphqlResponse({
             createUserList: {
               list: { id: "L2", name: "CLI Tools", isPrivate: true },
             },
           });
         }
         if (query.includes("updateUserListsForItem")) {
-          return mockResp({
+          return mockGraphqlResponse({
             updateUserListsForItem: { clientMutationId: null },
           });
         }
         if (query.includes("starredRepositories")) {
-          return mockResp({
+          return mockGraphqlResponse({
             viewer: {
               starredRepositories: {
                 pageInfo: { hasNextPage: false, endCursor: null },
@@ -580,7 +555,7 @@ describe("batchCategorize", () => {
           });
         }
         if (query.includes("lists(first:") && query.includes("items(")) {
-          return mockResp({
+          return mockGraphqlResponse({
             viewer: {
               lists: {
                 nodes: [
@@ -597,7 +572,7 @@ describe("batchCategorize", () => {
           });
         }
         if (query.includes("lists(first:")) {
-          return mockResp({
+          return mockGraphqlResponse({
             viewer: {
               lists: {
                 nodes: [{ id: "L1", name: "Frontend", isPrivate: false }],
@@ -640,17 +615,17 @@ describe("batchCategorize", () => {
         const query: string = body.query || "";
 
         if (query.includes("createUserList")) {
-          return mockResp({
+          return mockGraphqlResponse({
             createUserList: { list: { id: "X", name: "X", isPrivate: true } },
           });
         }
         if (query.includes("updateUserListsForItem")) {
-          return mockResp({
+          return mockGraphqlResponse({
             updateUserListsForItem: { clientMutationId: null },
           });
         }
         if (query.includes("starredRepositories")) {
-          return mockResp({
+          return mockGraphqlResponse({
             viewer: {
               starredRepositories: {
                 pageInfo: { hasNextPage: false, endCursor: null },
@@ -668,7 +643,7 @@ describe("batchCategorize", () => {
           });
         }
         if (query.includes("lists(first:") && query.includes("items(")) {
-          return mockResp({
+          return mockGraphqlResponse({
             viewer: {
               lists: {
                 nodes: [
@@ -685,7 +660,7 @@ describe("batchCategorize", () => {
           });
         }
         if (query.includes("lists(first:")) {
-          return mockResp({
+          return mockGraphqlResponse({
             viewer: {
               lists: {
                 nodes: [{ id: "L1", name: "Test", isPrivate: false }],
@@ -721,17 +696,17 @@ describe("batchCategorize", () => {
         const query: string = body.query || "";
 
         if (query.includes("createUserList")) {
-          return mockResp({
+          return mockGraphqlResponse({
             createUserList: { list: { id: "X", name: "X", isPrivate: true } },
           });
         }
         if (query.includes("updateUserListsForItem")) {
-          return mockResp({
+          return mockGraphqlResponse({
             updateUserListsForItem: { clientMutationId: null },
           });
         }
         if (query.includes("starredRepositories")) {
-          return mockResp({
+          return mockGraphqlResponse({
             viewer: {
               starredRepositories: {
                 pageInfo: { hasNextPage: false, endCursor: null },
@@ -756,7 +731,7 @@ describe("batchCategorize", () => {
           });
         }
         if (query.includes("lists(first:") && query.includes("items(")) {
-          return mockResp({
+          return mockGraphqlResponse({
             viewer: {
               lists: {
                 nodes: [
@@ -773,7 +748,7 @@ describe("batchCategorize", () => {
           });
         }
         if (query.includes("lists(first:")) {
-          return mockResp({
+          return mockGraphqlResponse({
             viewer: {
               lists: { nodes: [{ id: "L1", name: "Test", isPrivate: false }] },
             },
@@ -816,17 +791,17 @@ describe("batchCategorize", () => {
         const query: string = body.query || "";
 
         if (query.includes("createUserList")) {
-          return mockResp({
+          return mockGraphqlResponse({
             createUserList: { list: { id: "X", name: "X", isPrivate: true } },
           });
         }
         if (query.includes("updateUserListsForItem")) {
-          return mockResp({
+          return mockGraphqlResponse({
             updateUserListsForItem: { clientMutationId: null },
           });
         }
         if (query.includes("starredRepositories")) {
-          return mockResp({
+          return mockGraphqlResponse({
             viewer: {
               starredRepositories: {
                 pageInfo: { hasNextPage: false, endCursor: null },
@@ -851,7 +826,7 @@ describe("batchCategorize", () => {
           });
         }
         if (query.includes("lists(first:") && query.includes("items(")) {
-          return mockResp({
+          return mockGraphqlResponse({
             viewer: {
               lists: {
                 nodes: [
@@ -868,7 +843,7 @@ describe("batchCategorize", () => {
           });
         }
         if (query.includes("lists(first:")) {
-          return mockResp({
+          return mockGraphqlResponse({
             viewer: {
               lists: { nodes: [{ id: "L1", name: "Test", isPrivate: false }] },
             },
@@ -924,19 +899,19 @@ describe("batchCategorize", () => {
         const query: string = body.query || "";
 
         if (query.includes("createUserList")) {
-          return mockResp({
+          return mockGraphqlResponse({
             createUserList: {
               list: { id: "L_NEW", name: "CLI Tools", isPrivate: true },
             },
           });
         }
         if (query.includes("updateUserListsForItem")) {
-          return mockResp({
+          return mockGraphqlResponse({
             updateUserListsForItem: { clientMutationId: null },
           });
         }
         if (query.includes("starredRepositories")) {
-          return mockResp({
+          return mockGraphqlResponse({
             viewer: {
               starredRepositories: {
                 pageInfo: { hasNextPage: false, endCursor: null },
@@ -946,7 +921,7 @@ describe("batchCategorize", () => {
           });
         }
         if (query.includes("lists(first:") && query.includes("items(")) {
-          return mockResp({
+          return mockGraphqlResponse({
             viewer: {
               lists: {
                 nodes: [],
@@ -955,7 +930,7 @@ describe("batchCategorize", () => {
           });
         }
         if (query.includes("lists(first:")) {
-          return mockResp({
+          return mockGraphqlResponse({
             viewer: { lists: { nodes: [] } },
           });
         }
