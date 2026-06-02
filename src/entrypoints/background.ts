@@ -16,6 +16,7 @@ import {
   updateUserListsForItem,
   fuzzyMatchListName,
   starRepository,
+  deleteUserList,
   type GitHubList,
 } from "@/shared/github-lists";
 import { AnthropicClient } from "@/shared/providers/anthropic";
@@ -39,11 +40,31 @@ export default defineBackground(() => {
         message.payload.owner + "/" + message.payload.repo,
       );
       handleStarClick(message.payload, sender.tab?.id, sender.tab?.url);
+    } else if (message.type === "regenerateCategory") {
+      logger.log(
+        "[regenerate] bg received | repo:",
+        message.payload.owner + "/" + message.payload.repo,
+        "| rejections:",
+        message.payload.previousCategories,
+        "| current:",
+        message.payload.currentCategory,
+      );
+      handleRegenerate(message.payload, sender.tab?.id);
     }
   });
 });
 
 const inFlight = new Set<string>();
+
+interface StarcorderState {
+  metadata: RepoMetadata;
+  repoNodeId: string;
+  listId: string;
+  listName: string;
+  isNewList: boolean;
+}
+
+const states = new Map<string, StarcorderState>();
 
 async function handleStarClick(
   payload: { owner: string; repo: string; action: "star" | "unstar" },
@@ -208,6 +229,13 @@ async function handleStarClick(
       }
 
       await sendStatus(tabId, owner, repo, "saved", matchedList.name);
+      states.set(fullName, {
+        metadata,
+        repoNodeId,
+        listId: matchedList.id,
+        listName: matchedList.name,
+        isNewList: false,
+      });
     } else {
       try {
         const isPrivate = settings.listPrivacy === "private";
@@ -216,17 +244,209 @@ async function handleStarClick(
         logger.log("[stars] bg | updateUserListsForItem...");
         await updateUserListsForItem(repoNodeId, [newList.id], token);
         logger.log("[stars] bg | created+added to list:", newList.name);
+
+        await sendStatus(tabId, owner, repo, "saved", category);
+        states.set(fullName, {
+          metadata,
+          repoNodeId,
+          listId: newList.id,
+          listName: newList.name,
+          isNewList: true,
+        });
       } catch (err) {
         logger.error("[stars] bg | create list FAILED:", err);
         const msg = err instanceof Error ? err.message : "Creating list failed";
         await sendStatus(tabId, owner, repo, "error", undefined, msg);
         return;
       }
-
-      await sendStatus(tabId, owner, repo, "saved", category);
     }
   } catch (err) {
     logger.error("Extension error:", err);
+    const msg = err instanceof Error ? err.message : "Unexpected error";
+    await sendStatus(tabId, owner, repo, "error", undefined, msg);
+  } finally {
+    inFlight.delete(fullName);
+  }
+}
+
+async function handleRegenerate(
+  payload: {
+    owner: string;
+    repo: string;
+    previousCategories: string[];
+    currentCategory: string;
+  },
+  tabId?: number,
+) {
+  if (!tabId) return;
+
+  const { owner, repo, previousCategories, currentCategory } = payload;
+  const fullName = `${owner}/${repo}`;
+
+  if (inFlight.has(fullName)) return;
+  inFlight.add(fullName);
+
+  try {
+    const prevState = states.get(fullName);
+    if (!prevState) {
+      await sendStatus(
+        tabId,
+        owner,
+        repo,
+        "error",
+        undefined,
+        "Cannot find saved state to regenerate",
+      );
+      return;
+    }
+
+    const settings = await storage.getSettings();
+    const token = settings.githubToken;
+
+    if (!token) {
+      await sendStatus(
+        tabId,
+        owner,
+        repo,
+        "error",
+        undefined,
+        "GitHub token is required",
+      );
+      return;
+    }
+
+    await sendStatus(tabId, owner, repo, "categorizing");
+
+    const client = buildClient(settings);
+    if (!client) {
+      await sendStatus(
+        tabId,
+        owner,
+        repo,
+        "error",
+        undefined,
+        "No AI provider configured",
+      );
+      return;
+    }
+
+    // Remove repo from current list (pass empty listIds to clear all lists)
+    try {
+      logger.log("[regenerate] bg | removing from list:", prevState.listName);
+      await updateUserListsForItem(prevState.repoNodeId, [], token);
+    } catch (err) {
+      logger.error("[regenerate] bg | remove from list FAILED:", err);
+      const msg =
+        err instanceof Error ? err.message : "Removing from list failed";
+      await sendStatus(tabId, owner, repo, "error", undefined, msg);
+      return;
+    }
+
+    // Delete the list if it was created by this star action
+    if (prevState.isNewList) {
+      try {
+        logger.log(
+          "[regenerate] bg | deleting empty list:",
+          prevState.listName,
+        );
+        await deleteUserList(prevState.listId, token);
+      } catch (err) {
+        logger.error("[regenerate] bg | delete list FAILED:", err);
+        const msg =
+          err instanceof Error ? err.message : "Deleting empty list failed";
+        await sendStatus(tabId, owner, repo, "error", undefined, msg);
+        return;
+      }
+    }
+
+    // Get viewer lists (to re-match)
+    let lists: GitHubList[];
+    try {
+      lists = await getViewerLists(token);
+    } catch (err) {
+      logger.error("[regenerate] bg | getViewerLists FAILED:", err);
+      const msg = err instanceof Error ? err.message : "getViewerLists failed";
+      await sendStatus(tabId, owner, repo, "error", undefined, msg);
+      return;
+    }
+
+    const existingNames = lists.map((l) => l.name);
+    const allRejected = [currentCategory, ...previousCategories];
+
+    let category: string;
+    try {
+      logger.log("[regenerate] bg | AI categorize | rejected:", allRejected);
+      category = await categorizeRepository(
+        client,
+        prevState.metadata,
+        owner,
+        repo,
+        existingNames,
+        settings.enableEmojis,
+        settings.enableCategoryPrefix,
+        settings.autoFormat,
+        allRejected,
+      );
+      logger.log("[regenerate] bg | AI result:", category);
+    } catch (err) {
+      logger.error("[regenerate] bg | AI categorize FAILED:", err);
+      const msg =
+        err instanceof Error ? err.message : "AI categorization failed";
+      await sendStatus(tabId, owner, repo, "error", undefined, msg);
+      return;
+    }
+
+    // Fuzzy-match against existing lists
+    const matchedList = fuzzyMatchListName(category, lists);
+    logger.log(
+      "[regenerate] bg | fuzzy match:",
+      matchedList ? matchedList.name : "none",
+    );
+
+    if (matchedList) {
+      try {
+        await updateUserListsForItem(
+          prevState.repoNodeId,
+          [matchedList.id],
+          token,
+        );
+      } catch (err) {
+        logger.error("[regenerate] bg | add to list FAILED:", err);
+        const msg =
+          err instanceof Error ? err.message : "Adding to list failed";
+        await sendStatus(tabId, owner, repo, "error", undefined, msg);
+        return;
+      }
+
+      await sendStatus(tabId, owner, repo, "saved", matchedList.name);
+      states.set(fullName, {
+        ...prevState,
+        listId: matchedList.id,
+        listName: matchedList.name,
+        isNewList: false,
+      });
+    } else {
+      try {
+        const isPrivate = settings.listPrivacy === "private";
+        const newList = await createUserList(category, isPrivate, token);
+        await updateUserListsForItem(prevState.repoNodeId, [newList.id], token);
+
+        await sendStatus(tabId, owner, repo, "saved", category);
+        states.set(fullName, {
+          ...prevState,
+          listId: newList.id,
+          listName: newList.name,
+          isNewList: true,
+        });
+      } catch (err) {
+        logger.error("[regenerate] bg | create list FAILED:", err);
+        const msg = err instanceof Error ? err.message : "Creating list failed";
+        await sendStatus(tabId, owner, repo, "error", undefined, msg);
+        return;
+      }
+    }
+  } catch (err) {
+    logger.error("[regenerate] Error:", err);
     const msg = err instanceof Error ? err.message : "Unexpected error";
     await sendStatus(tabId, owner, repo, "error", undefined, msg);
   } finally {

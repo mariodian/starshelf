@@ -21,20 +21,56 @@
   }
 }
 
-#starshelf-overlay {
+#starshelf-overlay,
+#starshelf-refresh-btn {
   background: var(
     --tooltip-bgColor,
     var(--color-tooltip-bg, rgba(0, 0, 0, 0.85))
   );
+  border-radius: 6px;
+  font-size: 12px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  transition: opacity 0.3s;
+}
+
+#starshelf-wrapper {
+  z-index: 1000;
+  position: absolute;
+  right: 0;
+  display: flex;
+  align-items: center;
+}
+
+#starshelf-overlay {
   color: var(--starshelf-link);
+  pointer-events: none;
   padding: var(--overlay-paddingBlock-condensed)
     var(--overlay-padding-condensed);
+  white-space: "wrap";
+  max-width: "360px";
+  width: "max-content";
+  opacity: "0";
+}
+
+#starshelf-refresh-btn {
+  border: none;
+  height: 26px;
+  width: 26px;
+  color: #fff;
+  margin-left: 4px;
+  cursor: pointer;
+  line-height: 1;
+  opacity: 0.8;
+}
+
+#starshelf-refresh-btn:hover {
+  opacity: 1;
 }
 
 #starshelf-spinner {
   display: inline-block;
   position: relative;
-  top: -1px;
   width: 12px;
   height: 12px;
   border: 2px solid var(--starshelf-spinner);

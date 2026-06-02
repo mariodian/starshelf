@@ -45,6 +45,7 @@ export class OpenCodeClient implements AiProviderClient {
     enableEmojis = false,
     enableCategoryPrefix = false,
     autoFormat = true,
+    previousCategories: string[] = [],
   ): Promise<string> {
     const response = await fetch(`${this.baseUrl}/chat/completions`, {
       method: "POST",
@@ -70,6 +71,7 @@ export class OpenCodeClient implements AiProviderClient {
               enableEmojis,
               enableCategoryPrefix,
               autoFormat,
+              previousCategories,
             ),
           },
         ],

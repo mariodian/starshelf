@@ -18,6 +18,7 @@ export class OpenAIClient implements AiProviderClient {
     enableEmojis = false,
     enableCategoryPrefix = false,
     autoFormat = true,
+    previousCategories: string[] = [],
   ): Promise<string> {
     const response = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
@@ -43,6 +44,7 @@ export class OpenAIClient implements AiProviderClient {
               enableEmojis,
               enableCategoryPrefix,
               autoFormat,
+              previousCategories,
             ),
           },
         ],

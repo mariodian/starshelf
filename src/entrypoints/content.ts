@@ -2,13 +2,23 @@ import type { BackgroundMessage } from "@/shared/types/messages";
 import { logger } from "@/shared/logger";
 import "../shared/overlay.css";
 
+const WRAPPER_ID = "starshelf-wrapper";
 const OVERLAY_ID = "starshelf-overlay";
 
 const TIMEOUTS = {
-  saved: 3000,
+  saved: 5000,
   error: 5000,
   removed: 2000,
 };
+
+let saveTimeout: ReturnType<typeof setTimeout> | null = null;
+let currentFadeMs = 0;
+let hoverActive = false;
+const rejectedCategories = new Map<string, string[]>();
+
+function reponame(owner: string, repo: string) {
+  return `${owner}/${repo}`;
+}
 
 export default defineContentScript({
   matches: ["https://github.com/*"],
@@ -158,74 +168,159 @@ function initWatcher() {
 // Overlay
 // ---------------------------------------------------------------------------
 
+function startFadeTimer(ms: number) {
+  currentFadeMs = ms;
+  if (hoverActive) return;
+  if (saveTimeout) clearTimeout(saveTimeout);
+  saveTimeout = setTimeout(() => {
+    if (hoverActive) return;
+    const overlay = document.getElementById(OVERLAY_ID);
+    if (overlay) overlay.style.opacity = "0";
+    const refreshBtn = document.getElementById("starshelf-refresh-btn");
+    if (refreshBtn) refreshBtn.style.opacity = "0";
+    saveTimeout = null;
+    currentFadeMs = 0;
+  }, ms);
+}
+
 function showOverlay(payload: BackgroundMessage["payload"]) {
-  let el = document.getElementById(OVERLAY_ID);
-  if (!el) {
-    el = document.createElement("div");
-    el.id = OVERLAY_ID;
-    Object.assign(el.style, {
-      position: "absolute",
-      right: 0,
-      zIndex: "9999",
-      borderRadius: "6px",
-      fontSize: "12px",
-      fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
-      boxShadow: "0 2px 8px rgba(0,0,0,0.3)",
-      pointerEvents: "none",
-      transition: "opacity 0.3s",
-      whiteSpace: "wrap",
-      maxWidth: "360px",
-      width: "max-content",
-      opacity: "0",
+  if (saveTimeout) {
+    clearTimeout(saveTimeout);
+    saveTimeout = null;
+  }
+
+  let wrapper = document.getElementById(WRAPPER_ID);
+  if (!wrapper) {
+    wrapper = document.createElement("div");
+    wrapper.id = WRAPPER_ID;
+    wrapper.addEventListener("mouseenter", () => {
+      hoverActive = true;
+      if (saveTimeout) {
+        clearTimeout(saveTimeout);
+        saveTimeout = null;
+      }
+    });
+    wrapper.addEventListener("mouseleave", () => {
+      hoverActive = false;
+      if (currentFadeMs > 0) {
+        startFadeTimer(currentFadeMs);
+      }
     });
   }
 
-  const btn = findStarButton();
-  if (btn) {
-    const parent = btn.closest("li") || btn.parentElement;
-    if (parent && el.parentElement !== parent) {
-      parent.appendChild(el);
+  let overlay = document.getElementById(OVERLAY_ID);
+  if (!overlay) {
+    overlay = document.createElement("div");
+    overlay.id = OVERLAY_ID;
+    wrapper.appendChild(overlay);
+  }
+
+  let refreshBtn = wrapper.querySelector<HTMLButtonElement>(
+    "#starshelf-refresh-btn",
+  );
+  if (!refreshBtn) {
+    refreshBtn = document.createElement("button");
+    refreshBtn.id = "starshelf-refresh-btn";
+    refreshBtn.title = "Regenerate name";
+    refreshBtn.textContent = "\u21BB";
+    refreshBtn.addEventListener("click", onRefreshClick);
+    wrapper.appendChild(refreshBtn);
+  }
+
+  const starBtn = findStarButton();
+  if (starBtn) {
+    const parent = starBtn.closest("li") || starBtn.parentElement;
+    if (parent && wrapper.parentElement !== parent) {
+      parent.appendChild(wrapper);
       parent.style.position = "relative";
     }
-    el.style.top = `${btn.offsetHeight + 4}px`;
+    wrapper.style.top = `${starBtn.offsetHeight + 4}px`;
   }
 
   const { status, category, error } = payload;
 
   switch (status) {
     case "categorizing":
-      el.innerHTML = `
-<div style="white-space: nowrap;">
+      refreshBtn.style.display = "none";
+      overlay.innerHTML = `
+<div style="white-space: nowrap; display: flex; align-items: center; gap: 6px;">
   <span id="starshelf-spinner"></span>
   <span id="starshelf-text">Shelving...</span>
 </div>
 `;
-      el.style.color = "var(--starshelf-link)";
-      el.style.opacity = "1";
+      overlay.style.color = "var(--starshelf-link)";
+      overlay.style.opacity = "1";
       break;
     case "saved":
-      el.textContent = `\u2605 ${category || "Added to list"}`;
-      el.style.color = "var(--starshelf-link)";
-      el.style.opacity = "1";
-      setTimeout(() => {
-        el!.style.opacity = "0";
-      }, TIMEOUTS.saved);
+      refreshBtn.style.display = "";
+      refreshBtn.style.opacity = "";
+      refreshBtn.dataset.owner = payload.owner;
+      refreshBtn.dataset.repo = payload.repo;
+      refreshBtn.dataset.category = category || "";
+      overlay.innerHTML = `
+<div style="white-space: nowrap; display: flex; align-items: center;">
+  <span id="starshelf-saved-text">${category || "Added to list"}</span>
+</div>
+`;
+      overlay.style.color = "var(--starshelf-link)";
+      overlay.style.opacity = "1";
+      startFadeTimer(TIMEOUTS.saved);
       break;
     case "error":
-      el.textContent = `\u26A0 ${error || "Error"}`;
-      el.style.color = "var(--starshelf-error)";
-      el.style.opacity = "1";
-      setTimeout(() => {
-        el!.style.opacity = "0";
-      }, TIMEOUTS.error);
+      refreshBtn.style.display = "none";
+      overlay.textContent = `\u26A0 ${error || "Error"}`;
+      overlay.style.color = "var(--starshelf-error)";
+      overlay.style.opacity = "1";
+      startFadeTimer(TIMEOUTS.error);
       break;
     case "removed":
-      el.textContent = "Unstarred";
-      el.style.color = "var(--starshelf-muted)";
-      el.style.opacity = "1";
-      setTimeout(() => {
-        el!.style.opacity = "0";
-      }, TIMEOUTS.removed);
+      refreshBtn.style.display = "none";
+      overlay.textContent = "Unstarred";
+      overlay.style.color = "var(--starshelf-muted)";
+      overlay.style.opacity = "1";
+      startFadeTimer(TIMEOUTS.removed);
       break;
   }
+}
+
+function onRefreshClick(event: Event) {
+  const btn = event.currentTarget as HTMLButtonElement;
+  const owner = btn.dataset.owner;
+  const repo = btn.dataset.repo;
+  const category = btn.dataset.category;
+  if (!owner || !repo || !category) return;
+
+  if (saveTimeout) {
+    clearTimeout(saveTimeout);
+    saveTimeout = null;
+  }
+
+  const fullName = reponame(owner, repo);
+  const rejected = rejectedCategories.get(fullName) || [];
+  rejected.push(category);
+  rejectedCategories.set(fullName, rejected);
+
+  btn.style.display = "none";
+  currentFadeMs = 0;
+
+  const overlay = document.getElementById(OVERLAY_ID);
+  if (overlay) {
+    overlay.innerHTML = `
+<div style="white-space: nowrap; display: flex; align-items: center; gap: 6px;">
+  <span id="starshelf-spinner"></span>
+  <span id="starshelf-text">Regenerating...</span>
+</div>
+`;
+    overlay.style.opacity = "1";
+  }
+
+  browser.runtime.sendMessage({
+    type: "regenerateCategory",
+    payload: {
+      owner,
+      repo,
+      previousCategories: rejected.slice(0, -1),
+      currentCategory: category,
+    },
+  });
 }

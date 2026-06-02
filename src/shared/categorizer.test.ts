@@ -33,6 +33,7 @@ describe("categorizeRepository", () => {
       false,
       false,
       true,
+      [],
     );
   });
 
@@ -76,6 +77,7 @@ describe("categorizeRepository", () => {
       false,
       false,
       true,
+      [],
     );
   });
 });

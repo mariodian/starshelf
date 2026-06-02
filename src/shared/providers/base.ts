@@ -10,6 +10,7 @@ export interface AiProviderClient {
     enableEmojis?: boolean,
     enableCategoryPrefix?: boolean,
     autoFormat?: boolean,
+    previousCategories?: string[],
   ): Promise<string>;
   listModels?(): Promise<string[]>;
 }
@@ -22,6 +23,7 @@ export function buildPrompt(
   enableEmojis = false,
   enableCategoryPrefix = false,
   autoFormat = true,
+  previousCategories: string[] = [],
 ): string {
   const detectedEmojis =
     existingLists.length > 0 &&
@@ -67,6 +69,14 @@ Use the format "Category: Name" (e.g. "Dev: JS Framework", "Dev: CSS Library",
 `
     : "";
 
+  const previousSection =
+    previousCategories.length > 0
+      ? `
+Previously suggested (and rejected) names: ${previousCategories.join(", ")}
+Do NOT repeat any of these names. Pick something different.
+`
+      : "";
+
   return unwrap(
     trimNewlines(`
 Assign a single list name to this GitHub repository for organizing GitHub stars.
@@ -77,6 +87,7 @@ Topics: ${metadata.topics.join(", ") || "N/A"}
 ${trimNewlines(emojiHint)}
 ${trimNewlines(styleHint)}
 ${trimNewlines(listsSection)}
+${trimNewlines(previousSection)}
 Use at most 3 words total, not counting the emoji. ${trimNewlines(categoryPrompt)}
 Otherwise use plain nouns (e.g. "CLI Tool", "Browser Extension").
 Prefer broad categories that could group 5+ similar repos. Name the type of tool,

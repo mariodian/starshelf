@@ -167,6 +167,21 @@ export async function starRepository(
   );
 }
 
+export async function deleteUserList(
+  listId: string,
+  token: string,
+): Promise<void> {
+  await graphqlRequest(
+    token,
+    `mutation($input: DeleteUserListInput!) {
+      deleteUserList(input: $input) {
+        clientMutationId
+      }
+    }`,
+    { input: { listId } },
+  );
+}
+
 export function fuzzyMatchListName(
   category: string,
   lists: GitHubList[],

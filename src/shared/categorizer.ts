@@ -10,6 +10,7 @@ export async function categorizeRepository(
   enableEmojis = false,
   enableCategoryPrefix = false,
   autoFormat = true,
+  previousCategories: string[] = [],
 ): Promise<string> {
   return client.categorize(
     metadata,
@@ -19,5 +20,6 @@ export async function categorizeRepository(
     enableEmojis,
     enableCategoryPrefix,
     autoFormat,
+    previousCategories,
   );
 }
