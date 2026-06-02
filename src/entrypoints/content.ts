@@ -1,4 +1,7 @@
-import type { BackgroundMessage } from "@/shared/types/messages";
+import type {
+  BackgroundMessage,
+  UpdateStarStatusMessage,
+} from "@/shared/types/messages";
 import { logger } from "@/shared/logger";
 import { parseRepoFromUrl } from "@/shared/github";
 import "../shared/overlay.css";
@@ -37,7 +40,7 @@ export default defineContentScript({
 
     browser.runtime.onMessage.addListener((msg: BackgroundMessage) => {
       if (msg.type === "updateStarStatus") {
-        showOverlay(msg.payload);
+        showOverlay((msg as UpdateStarStatusMessage).payload);
       }
     });
   },
@@ -178,7 +181,7 @@ function startFadeTimer(ms: number) {
   }, ms);
 }
 
-function showOverlay(payload: BackgroundMessage["payload"]) {
+function showOverlay(payload: UpdateStarStatusMessage["payload"]) {
   if (saveTimeout) {
     clearTimeout(saveTimeout);
     saveTimeout = null;

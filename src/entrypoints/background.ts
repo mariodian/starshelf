@@ -1,6 +1,9 @@
 import type {
   ContentMessage,
   UpdateStarStatusMessage,
+  RuntimeMessage,
+  BatchStatus,
+  BatchProgressMessage,
 } from "@/shared/types/messages";
 import { storage, type ExtensionSettings } from "@/shared/storage";
 import {
@@ -17,6 +20,7 @@ import {
   fuzzyMatchListName,
   starRepository,
   deleteUserList,
+  batchCategorize,
   type GitHubList,
 } from "@/shared/github-lists";
 import type { AiProviderClient } from "@/shared/providers/base";
@@ -28,7 +32,7 @@ export default defineBackground(() => {
     import("@/shared/dev-bootstrap").then((m) => m.seedFromEnvIfMissing());
   }
 
-  browser.runtime.onMessage.addListener((message: ContentMessage, sender) => {
+  browser.runtime.onMessage.addListener((message: RuntimeMessage, sender) => {
     if (message.type === "repoStarClicked") {
       logger.log(
         "[stars] bg received | action:",
@@ -47,6 +51,10 @@ export default defineBackground(() => {
         message.payload.currentCategory,
       );
       handleRegenerate(message.payload, sender.tab?.id);
+    } else if (message.type === "startBatch") {
+      return handleStartBatch();
+    } else if (message.type === "cancelBatch") {
+      return handleCancelBatch();
     }
   });
 });
@@ -502,5 +510,117 @@ async function sendStatus(
     await browser.tabs.sendMessage(tabId, message);
   } catch {
     // Tab may have been closed
+  }
+}
+
+let batchAbortController: AbortController | null = null;
+
+async function handleStartBatch(): Promise<
+  { alreadyRunning: true } | { error: string } | null
+> {
+  const current = await browser.storage.local
+    .get("batchStatus")
+    .then((r) => r.batchStatus as BatchStatus | undefined);
+  if (current?.state === "running") {
+    return { alreadyRunning: true };
+  }
+
+  const settings = await storage.getSettings();
+  const token = settings.githubToken;
+
+  if (!token) {
+    return {
+      error: "GitHub token is required. Add it in the extension popup.",
+    };
+  }
+
+  const client = createProviderClient(
+    settings.activeProvider,
+    settings.providers[settings.activeProvider],
+  );
+  if (!client) {
+    return { error: "No AI provider configured. Open the extension popup." };
+  }
+
+  batchAbortController = new AbortController();
+  const signal = batchAbortController.signal;
+
+  const runningStatus: BatchStatus = {
+    state: "running",
+    current: 0,
+    currentRepo: "",
+  };
+  await updateBatchStatus(runningStatus);
+
+  try {
+    const result = await batchCategorize({
+      token,
+      client,
+      settings: {
+        listPrivacy: settings.listPrivacy,
+        enableEmojis: settings.enableEmojis,
+        enableCategoryPrefix: settings.enableCategoryPrefix,
+        autoFormat: settings.autoFormat,
+      },
+      signal,
+      onProgress: (current, repoName) => {
+        const status: BatchStatus = {
+          state: "running",
+          current,
+          currentRepo: repoName,
+        };
+        updateBatchStatus(status);
+      },
+    });
+
+    const terminalStatus: BatchStatus = result.cancelled
+      ? {
+          state: "cancelled",
+          categorized: result.categorized,
+          skipped: result.failed,
+          completedAt: new Date().toISOString(),
+        }
+      : {
+          state: "done",
+          categorized: result.categorized,
+          skipped: result.failed,
+          completedAt: new Date().toISOString(),
+        };
+
+    await updateBatchStatus(terminalStatus);
+  } catch (err) {
+    const errorStatus: BatchStatus = {
+      state: "error",
+      message: err instanceof Error ? err.message : "Unknown error",
+    };
+    await updateBatchStatus(errorStatus);
+    logger.error("[batch] bg | batchCategorize failed:", err);
+  } finally {
+    batchAbortController = null;
+  }
+
+  return null;
+}
+
+async function handleCancelBatch(): Promise<
+  { success: true } | { notRunning: true }
+> {
+  if (!batchAbortController) {
+    return { notRunning: true };
+  }
+
+  batchAbortController.abort();
+  return { success: true };
+}
+
+async function updateBatchStatus(status: BatchStatus): Promise<void> {
+  await browser.storage.local.set({ batchStatus: status });
+  try {
+    await browser.runtime.sendMessage({
+      type: "batchProgress",
+      payload: status,
+    } as BatchProgressMessage);
+  } catch {
+    // Popup may not be open
   }
 }

@@ -18,7 +18,16 @@ export interface RegenerateCategoryMessage {
   };
 }
 
-// Messages sent from background to content script
+// Messages sent from popup to background
+export interface StartBatchMessage {
+  type: "startBatch";
+}
+
+export interface CancelBatchMessage {
+  type: "cancelBatch";
+}
+
+// Messages sent from background to content script / popup
 export interface UpdateStarStatusMessage {
   type: "updateStarStatus";
   payload: {
@@ -31,6 +40,30 @@ export interface UpdateStarStatusMessage {
   };
 }
 
+export type BatchStatus =
+  | { state: "idle" }
+  | { state: "running"; current: number; currentRepo: string }
+  | {
+      state: "done";
+      categorized: number;
+      skipped: number;
+      completedAt: string;
+    }
+  | { state: "error"; message: string }
+  | {
+      state: "cancelled";
+      categorized: number;
+      skipped: number;
+      completedAt: string;
+    };
+
+export interface BatchProgressMessage {
+  type: "batchProgress";
+  payload: BatchStatus;
+}
+
 // Union types for sender and receiver
 export type ContentMessage = RepoStarClickedMessage | RegenerateCategoryMessage;
-export type BackgroundMessage = UpdateStarStatusMessage;
+export type PopupMessage = StartBatchMessage | CancelBatchMessage;
+export type BackgroundMessage = UpdateStarStatusMessage | BatchProgressMessage;
+export type RuntimeMessage = ContentMessage | PopupMessage;

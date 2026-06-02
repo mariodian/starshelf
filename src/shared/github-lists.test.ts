@@ -8,7 +8,12 @@ import {
   starRepository,
   fuzzyMatchListName,
   ScopeError,
+  getAllListedRepoIds,
+  streamUncategorizedRepos,
+  batchCategorize,
+  type BatchCategorizeResult,
 } from "@/shared/github-lists";
+import type { AiProviderClient } from "@/shared/providers/base";
 
 beforeEach(() => {
   vi.stubGlobal("fetch", vi.fn());
@@ -218,5 +223,754 @@ describe("ScopeError", () => {
     expect(err.name).toBe("ScopeError");
     expect(err.message).toBe("test message");
     expect(err).toBeInstanceOf(Error);
+  });
+});
+
+function mockResp(data: unknown): Response {
+  return {
+    ok: true,
+    json: async () => ({ data }),
+  } as Response;
+}
+
+describe("getAllListedRepoIds", () => {
+  it("returns an empty set when there are no lists", async () => {
+    mockGraphqlResolve({
+      viewer: {
+        lists: {
+          nodes: [],
+        },
+      },
+    });
+
+    const ids = await getAllListedRepoIds("token");
+    expect(ids.size).toBe(0);
+  });
+
+  it("collects repo IDs from list items", async () => {
+    mockGraphqlResolve({
+      viewer: {
+        lists: {
+          nodes: [
+            {
+              id: "L1",
+              items: {
+                nodes: [{ id: "R1" }, { id: "R2" }],
+                pageInfo: { hasNextPage: false, endCursor: null },
+              },
+            },
+          ],
+        },
+      },
+    });
+
+    const ids = await getAllListedRepoIds("token");
+    expect(ids.size).toBe(2);
+    expect(ids.has("R1")).toBe(true);
+    expect(ids.has("R2")).toBe(true);
+  });
+
+  it("follows pagination within list items", async () => {
+    vi.mocked(fetch)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          data: {
+            viewer: {
+              lists: {
+                nodes: [
+                  {
+                    id: "L1",
+                    items: {
+                      nodes: [{ id: "R1" }],
+                      pageInfo: { hasNextPage: true, endCursor: "c1" },
+                    },
+                  },
+                ],
+              },
+            },
+          },
+        }),
+      } as Response)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          data: {
+            node: {
+              items: {
+                nodes: [{ id: "R2" }],
+                pageInfo: { hasNextPage: false, endCursor: null },
+              },
+            },
+          },
+        }),
+      } as Response);
+
+    const ids = await getAllListedRepoIds("token");
+    expect(ids.size).toBe(2);
+    expect(ids.has("R1")).toBe(true);
+    expect(ids.has("R2")).toBe(true);
+  });
+
+  it("skips null items in the nodes array", async () => {
+    mockGraphqlResolve({
+      viewer: {
+        lists: {
+          nodes: [
+            {
+              id: "L1",
+              items: {
+                nodes: [{ id: "R1" }, null, { id: "R2" }],
+                pageInfo: { hasNextPage: false, endCursor: null },
+              },
+            },
+          ],
+        },
+      },
+    });
+
+    const ids = await getAllListedRepoIds("token");
+    expect(ids.size).toBe(2);
+  });
+
+  it("deduplicates repos across multiple lists", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        data: {
+          viewer: {
+            lists: {
+              nodes: [
+                {
+                  id: "L1",
+                  items: {
+                    nodes: [{ id: "R1" }],
+                    pageInfo: { hasNextPage: false, endCursor: null },
+                  },
+                },
+                {
+                  id: "L2",
+                  items: {
+                    nodes: [{ id: "R1" }],
+                    pageInfo: { hasNextPage: false, endCursor: null },
+                  },
+                },
+              ],
+            },
+          },
+        },
+      }),
+    } as Response);
+
+    const ids = await getAllListedRepoIds("token");
+    expect(ids.size).toBe(1);
+  });
+});
+
+describe("streamUncategorizedRepos", () => {
+  beforeEach(() => {
+    vi.stubGlobal("fetch", vi.fn());
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("yields only uncategorized repos", async () => {
+    mockGraphqlResolve({
+      viewer: {
+        starredRepositories: {
+          pageInfo: { hasNextPage: false, endCursor: null },
+          nodes: [
+            {
+              id: "R_1",
+              nameWithOwner: "owner/repo1",
+              description: "A test repo",
+              primaryLanguage: { name: "TypeScript" },
+              repositoryTopics: {
+                nodes: [{ topic: { name: "cli" } }],
+              },
+            },
+            {
+              id: "R_2",
+              nameWithOwner: "owner/repo2",
+              description: "Already categorized",
+              primaryLanguage: null,
+              repositoryTopics: { nodes: [] },
+            },
+          ],
+        },
+      },
+    });
+
+    const excludeNodeIds = new Set<string>(["R_2"]);
+
+    const results = [];
+    for await (const repo of streamUncategorizedRepos(
+      "token",
+      excludeNodeIds,
+    )) {
+      results.push(repo);
+    }
+
+    expect(results).toHaveLength(1);
+    expect(results[0].nodeId).toBe("R_1");
+    expect(results[0].nameWithOwner).toBe("owner/repo1");
+    expect(results[0].owner).toBe("owner");
+    expect(results[0].repo).toBe("repo1");
+    expect(results[0].description).toBe("A test repo");
+    expect(results[0].language).toBe("TypeScript");
+    expect(results[0].topics).toEqual(["cli"]);
+  });
+
+  it("follows pagination across multiple pages", async () => {
+    vi.mocked(fetch)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          data: {
+            viewer: {
+              starredRepositories: {
+                pageInfo: { hasNextPage: true, endCursor: "cursor1" },
+                nodes: [
+                  {
+                    id: "R_1",
+                    nameWithOwner: "o/r1",
+                    description: null,
+                    primaryLanguage: null,
+                    repositoryTopics: { nodes: [] },
+                  },
+                ],
+              },
+            },
+          },
+        }),
+      } as Response)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          data: {
+            viewer: {
+              starredRepositories: {
+                pageInfo: { hasNextPage: false, endCursor: null },
+                nodes: [
+                  {
+                    id: "R_2",
+                    nameWithOwner: "o/r2",
+                    description: null,
+                    primaryLanguage: null,
+                    repositoryTopics: { nodes: [] },
+                  },
+                ],
+              },
+            },
+          },
+        }),
+      } as Response);
+
+    const results = [];
+    for await (const repo of streamUncategorizedRepos("token")) {
+      results.push(repo);
+    }
+
+    expect(results).toHaveLength(2);
+    expect(results[0].nodeId).toBe("R_1");
+    expect(results[1].nodeId).toBe("R_2");
+  });
+
+  it("returns nothing when all repos are categorized", async () => {
+    mockGraphqlResolve({
+      viewer: {
+        starredRepositories: {
+          pageInfo: { hasNextPage: false, endCursor: null },
+          nodes: [
+            {
+              id: "R_1",
+              nameWithOwner: "o/r1",
+              description: null,
+              primaryLanguage: null,
+              repositoryTopics: { nodes: [] },
+            },
+          ],
+        },
+      },
+    });
+
+    const excludeNodeIds = new Set<string>(["R_1"]);
+
+    const results = [];
+    for await (const repo of streamUncategorizedRepos(
+      "token",
+      excludeNodeIds,
+    )) {
+      results.push(repo);
+    }
+
+    expect(results).toEqual([]);
+  });
+});
+
+describe("batchCategorize", () => {
+  beforeEach(() => {
+    vi.stubGlobal("fetch", vi.fn());
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  function mockClient(results: string[]): AiProviderClient {
+    const categorize = vi.fn<AiProviderClient["categorize"]>();
+    for (const r of results) {
+      categorize.mockResolvedValueOnce(r);
+    }
+    return { name: "test", categorize };
+  }
+
+  it("categorizes uncategorized repos using existing and new lists", async () => {
+    vi.mocked(fetch).mockImplementation(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const body = JSON.parse((init?.body as string) || "{}");
+        const query: string = body.query || "";
+
+        if (query.includes("createUserList")) {
+          return mockResp({
+            createUserList: {
+              list: { id: "L2", name: "CLI Tools", isPrivate: true },
+            },
+          });
+        }
+        if (query.includes("updateUserListsForItem")) {
+          return mockResp({
+            updateUserListsForItem: { clientMutationId: null },
+          });
+        }
+        if (query.includes("starredRepositories")) {
+          return mockResp({
+            viewer: {
+              starredRepositories: {
+                pageInfo: { hasNextPage: false, endCursor: null },
+                nodes: [
+                  {
+                    id: "R1",
+                    nameWithOwner: "o/r1",
+                    description: "A CLI tool",
+                    primaryLanguage: { name: "Rust" },
+                    repositoryTopics: {
+                      nodes: [{ topic: { name: "cli" } }],
+                    },
+                  },
+                  {
+                    id: "R2",
+                    nameWithOwner: "o/r2",
+                    description: "A React component",
+                    primaryLanguage: { name: "TypeScript" },
+                    repositoryTopics: {
+                      nodes: [{ topic: { name: "react" } }],
+                    },
+                  },
+                ],
+              },
+            },
+          });
+        }
+        if (query.includes("lists(first:") && query.includes("items(")) {
+          return mockResp({
+            viewer: {
+              lists: {
+                nodes: [
+                  {
+                    id: "L1",
+                    items: {
+                      nodes: [],
+                      pageInfo: { hasNextPage: false, endCursor: null },
+                    },
+                  },
+                ],
+              },
+            },
+          });
+        }
+        if (query.includes("lists(first:")) {
+          return mockResp({
+            viewer: {
+              lists: {
+                nodes: [{ id: "L1", name: "Frontend", isPrivate: false }],
+              },
+            },
+          });
+        }
+
+        return {
+          ok: false,
+          status: 500,
+          text: async () => "Unknown query",
+        } as Response;
+      },
+    );
+
+    const client = mockClient(["CLI Tools", "Frontend"]);
+    const onProgress = vi.fn();
+
+    const result = await batchCategorize({
+      token: "token",
+      client,
+      settings: { listPrivacy: "private" },
+      onProgress,
+    });
+
+    expect(result.categorized).toBe(2);
+    expect(result.failed).toBe(0);
+    expect(result.cancelled).toBe(false);
+    expect(client.categorize).toHaveBeenCalledTimes(2);
+    expect(onProgress).toHaveBeenCalledTimes(2);
+    expect(onProgress).toHaveBeenCalledWith(1, "o/r1");
+    expect(onProgress).toHaveBeenCalledWith(2, "o/r2");
+  });
+
+  it("returns empty result when all repos are already categorized", async () => {
+    vi.mocked(fetch).mockImplementation(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const body = JSON.parse((init?.body as string) || "{}");
+        const query: string = body.query || "";
+
+        if (query.includes("createUserList")) {
+          return mockResp({
+            createUserList: { list: { id: "X", name: "X", isPrivate: true } },
+          });
+        }
+        if (query.includes("updateUserListsForItem")) {
+          return mockResp({
+            updateUserListsForItem: { clientMutationId: null },
+          });
+        }
+        if (query.includes("starredRepositories")) {
+          return mockResp({
+            viewer: {
+              starredRepositories: {
+                pageInfo: { hasNextPage: false, endCursor: null },
+                nodes: [
+                  {
+                    id: "R1",
+                    nameWithOwner: "o/r1",
+                    description: null,
+                    primaryLanguage: null,
+                    repositoryTopics: { nodes: [] },
+                  },
+                ],
+              },
+            },
+          });
+        }
+        if (query.includes("lists(first:") && query.includes("items(")) {
+          return mockResp({
+            viewer: {
+              lists: {
+                nodes: [
+                  {
+                    id: "L1",
+                    items: {
+                      nodes: [{ id: "R1" }],
+                      pageInfo: { hasNextPage: false, endCursor: null },
+                    },
+                  },
+                ],
+              },
+            },
+          });
+        }
+        if (query.includes("lists(first:")) {
+          return mockResp({
+            viewer: {
+              lists: {
+                nodes: [{ id: "L1", name: "Test", isPrivate: false }],
+              },
+            },
+          });
+        }
+
+        return {
+          ok: false,
+          status: 500,
+          text: async () => "Unknown query",
+        } as Response;
+      },
+    );
+
+    const client = mockClient([]);
+    const result = await batchCategorize({
+      token: "token",
+      client,
+      settings: { listPrivacy: "private" },
+    });
+
+    expect(result.categorized).toBe(0);
+    expect(result.failed).toBe(0);
+    expect(client.categorize).not.toHaveBeenCalled();
+  });
+
+  it("handles partial failure and collects errors", async () => {
+    vi.mocked(fetch).mockImplementation(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const body = JSON.parse((init?.body as string) || "{}");
+        const query: string = body.query || "";
+
+        if (query.includes("createUserList")) {
+          return mockResp({
+            createUserList: { list: { id: "X", name: "X", isPrivate: true } },
+          });
+        }
+        if (query.includes("updateUserListsForItem")) {
+          return mockResp({
+            updateUserListsForItem: { clientMutationId: null },
+          });
+        }
+        if (query.includes("starredRepositories")) {
+          return mockResp({
+            viewer: {
+              starredRepositories: {
+                pageInfo: { hasNextPage: false, endCursor: null },
+                nodes: [
+                  {
+                    id: "R1",
+                    nameWithOwner: "o/r1",
+                    description: "desc1",
+                    primaryLanguage: null,
+                    repositoryTopics: { nodes: [] },
+                  },
+                  {
+                    id: "R2",
+                    nameWithOwner: "o/r2",
+                    description: "desc2",
+                    primaryLanguage: null,
+                    repositoryTopics: { nodes: [] },
+                  },
+                ],
+              },
+            },
+          });
+        }
+        if (query.includes("lists(first:") && query.includes("items(")) {
+          return mockResp({
+            viewer: {
+              lists: {
+                nodes: [
+                  {
+                    id: "L1",
+                    items: {
+                      nodes: [],
+                      pageInfo: { hasNextPage: false, endCursor: null },
+                    },
+                  },
+                ],
+              },
+            },
+          });
+        }
+        if (query.includes("lists(first:")) {
+          return mockResp({
+            viewer: {
+              lists: { nodes: [{ id: "L1", name: "Test", isPrivate: false }] },
+            },
+          });
+        }
+
+        return {
+          ok: false,
+          status: 500,
+          text: async () => "Unknown query",
+        } as Response;
+      },
+    );
+
+    const client: AiProviderClient = {
+      name: "test",
+      categorize: vi
+        .fn()
+        .mockResolvedValueOnce("Test")
+        .mockRejectedValueOnce(new Error("AI error")),
+    };
+
+    const result = await batchCategorize({
+      token: "token",
+      client,
+      settings: { listPrivacy: "private" },
+    });
+
+    expect(result.categorized).toBe(1);
+    expect(result.failed).toBe(1);
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0].repoName).toBe("o/r2");
+    expect(result.errors[0].error).toBe("AI error");
+  });
+
+  it("stops processing when aborted via signal", async () => {
+    vi.mocked(fetch).mockImplementation(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const body = JSON.parse((init?.body as string) || "{}");
+        const query: string = body.query || "";
+
+        if (query.includes("createUserList")) {
+          return mockResp({
+            createUserList: { list: { id: "X", name: "X", isPrivate: true } },
+          });
+        }
+        if (query.includes("updateUserListsForItem")) {
+          return mockResp({
+            updateUserListsForItem: { clientMutationId: null },
+          });
+        }
+        if (query.includes("starredRepositories")) {
+          return mockResp({
+            viewer: {
+              starredRepositories: {
+                pageInfo: { hasNextPage: false, endCursor: null },
+                nodes: [
+                  {
+                    id: "R1",
+                    nameWithOwner: "o/r1",
+                    description: "desc1",
+                    primaryLanguage: null,
+                    repositoryTopics: { nodes: [] },
+                  },
+                  {
+                    id: "R2",
+                    nameWithOwner: "o/r2",
+                    description: "desc2",
+                    primaryLanguage: null,
+                    repositoryTopics: { nodes: [] },
+                  },
+                ],
+              },
+            },
+          });
+        }
+        if (query.includes("lists(first:") && query.includes("items(")) {
+          return mockResp({
+            viewer: {
+              lists: {
+                nodes: [
+                  {
+                    id: "L1",
+                    items: {
+                      nodes: [],
+                      pageInfo: { hasNextPage: false, endCursor: null },
+                    },
+                  },
+                ],
+              },
+            },
+          });
+        }
+        if (query.includes("lists(first:")) {
+          return mockResp({
+            viewer: {
+              lists: { nodes: [{ id: "L1", name: "Test", isPrivate: false }] },
+            },
+          });
+        }
+
+        return {
+          ok: false,
+          status: 500,
+          text: async () => "Unknown query",
+        } as Response;
+      },
+    );
+
+    const controller = new AbortController();
+    const client = mockClient(["Test", "Test"]);
+
+    const resultPromise = batchCategorize({
+      token: "token",
+      client,
+      settings: { listPrivacy: "private" },
+      signal: controller.signal,
+    });
+
+    controller.abort();
+
+    const result = await resultPromise;
+
+    expect(result.cancelled).toBe(true);
+  });
+
+  it("reuses newly created lists for subsequent repos", async () => {
+    const repoNodes = [
+      {
+        id: "R1",
+        nameWithOwner: "o/r1",
+        description: "A CLI tool",
+        primaryLanguage: { name: "Rust" },
+        repositoryTopics: { nodes: [{ topic: { name: "cli" } }] },
+      },
+      {
+        id: "R2",
+        nameWithOwner: "o/r2",
+        description: "Another CLI tool",
+        primaryLanguage: { name: "Go" },
+        repositoryTopics: { nodes: [{ topic: { name: "cli" } }] },
+      },
+    ];
+
+    vi.mocked(fetch).mockImplementation(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const body = JSON.parse((init?.body as string) || "{}");
+        const query: string = body.query || "";
+
+        if (query.includes("createUserList")) {
+          return mockResp({
+            createUserList: {
+              list: { id: "L_NEW", name: "CLI Tools", isPrivate: true },
+            },
+          });
+        }
+        if (query.includes("updateUserListsForItem")) {
+          return mockResp({
+            updateUserListsForItem: { clientMutationId: null },
+          });
+        }
+        if (query.includes("starredRepositories")) {
+          return mockResp({
+            viewer: {
+              starredRepositories: {
+                pageInfo: { hasNextPage: false, endCursor: null },
+                nodes: repoNodes,
+              },
+            },
+          });
+        }
+        if (query.includes("lists(first:") && query.includes("items(")) {
+          return mockResp({
+            viewer: {
+              lists: {
+                nodes: [],
+              },
+            },
+          });
+        }
+        if (query.includes("lists(first:")) {
+          return mockResp({
+            viewer: { lists: { nodes: [] } },
+          });
+        }
+
+        return {
+          ok: false,
+          status: 500,
+          text: async () => "Unknown query",
+        } as Response;
+      },
+    );
+
+    const client = mockClient(["CLI Tools", "CLI Tools"]);
+
+    await batchCategorize({
+      token: "token",
+      client,
+      settings: { listPrivacy: "private" },
+    });
+
+    expect(client.categorize).toHaveBeenCalledTimes(2);
   });
 });

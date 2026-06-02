@@ -14,6 +14,21 @@
       </h1>
 
       <section>
+        <h2>Batch Categorize</h2>
+        <p>
+          Categorize all uncategorized starred repos into Star Lists. The
+          process runs in the background so you can close this popup.
+        </p>
+        <div class="field">
+          <button id="startBatch">Start</button>
+          <button id="cancelBatch" class="danger" style="display: none">
+            Cancel
+          </button>
+        </div>
+        <p id="batchStatus" class="hint">Ready</p>
+      </section>
+
+      <section>
         <h2>GitHub Token</h2>
         <p>
           Create a
