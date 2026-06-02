@@ -66,6 +66,24 @@ interface StarcorderState {
 
 const states = new Map<string, StarcorderState>();
 
+async function withErrorHandling<T>(
+  operation: () => Promise<T>,
+  tabId: number,
+  owner: string,
+  repo: string,
+  context: string,
+  logPrefix: string,
+): Promise<T | null> {
+  try {
+    return await operation();
+  } catch (err) {
+    logger.error(`${logPrefix} | ${context} FAILED:`, err);
+    const msg = err instanceof Error ? err.message : `${context} failed`;
+    await sendStatus(tabId, owner, repo, "error", undefined, msg);
+    return null;
+  }
+}
+
 async function categorizeAndAssign(
   tabId: number,
   owner: string,
@@ -85,26 +103,29 @@ async function categorizeAndAssign(
 } | null> {
   const existingNames = lists.map((l) => l.name);
 
-  let category: string;
-  try {
-    category = await categorizeRepository(
-      client,
-      metadata,
-      owner,
-      repo,
-      existingNames,
-      settings.enableEmojis,
-      settings.enableCategoryPrefix,
-      settings.autoFormat,
-      previousCategories ?? [],
-    );
-    logger.log("[stars] bg | AI result:", category);
-  } catch (err) {
-    logger.error("[stars] bg | AI categorize FAILED:", err);
-    const msg = err instanceof Error ? err.message : "AI categorization failed";
-    await sendStatus(tabId, owner, repo, "error", undefined, msg);
-    return null;
-  }
+  const category = await withErrorHandling(
+    async () => {
+      const cat = await categorizeRepository(
+        client,
+        metadata,
+        owner,
+        repo,
+        existingNames,
+        settings.enableEmojis,
+        settings.enableCategoryPrefix,
+        settings.autoFormat,
+        previousCategories ?? [],
+      );
+      logger.log("[stars] bg | AI result:", cat);
+      return cat;
+    },
+    tabId,
+    owner,
+    repo,
+    "AI categorize",
+    "[stars] bg",
+  );
+  if (category === null) return null;
 
   const matchedList = fuzzyMatchListName(category, lists);
   logger.log(
@@ -113,16 +134,20 @@ async function categorizeAndAssign(
   );
 
   if (matchedList) {
-    try {
-      logger.log("[stars] bg | updateUserListsForItem...");
-      await updateUserListsForItem(repoNodeId, [matchedList.id], token);
-      logger.log("[stars] bg | added to list:", matchedList.name);
-    } catch (err) {
-      logger.error("[stars] bg | add to list FAILED:", err);
-      const msg = err instanceof Error ? err.message : "Adding to list failed";
-      await sendStatus(tabId, owner, repo, "error", undefined, msg);
-      return null;
-    }
+    const ok = await withErrorHandling(
+      async () => {
+        logger.log("[stars] bg | updateUserListsForItem...");
+        await updateUserListsForItem(repoNodeId, [matchedList.id], token);
+        logger.log("[stars] bg | added to list:", matchedList.name);
+        return true;
+      },
+      tabId,
+      owner,
+      repo,
+      "add to list",
+      "[stars] bg",
+    );
+    if (ok === null) return null;
 
     await sendStatus(tabId, owner, repo, "saved", matchedList.name);
     return {
@@ -133,20 +158,23 @@ async function categorizeAndAssign(
     };
   }
 
-  let newList: GitHubList;
-  try {
-    const isPrivate = settings.listPrivacy === "private";
-    logger.log("[stars] bg | createUserList:", category);
-    newList = await createUserList(category, isPrivate, token);
-    logger.log("[stars] bg | updateUserListsForItem...");
-    await updateUserListsForItem(repoNodeId, [newList.id], token);
-    logger.log("[stars] bg | created+added to list:", newList.name);
-  } catch (err) {
-    logger.error("[stars] bg | create list FAILED:", err);
-    const msg = err instanceof Error ? err.message : "Creating list failed";
-    await sendStatus(tabId, owner, repo, "error", undefined, msg);
-    return null;
-  }
+  const newList = await withErrorHandling(
+    async () => {
+      const isPrivate = settings.listPrivacy === "private";
+      logger.log("[stars] bg | createUserList:", category);
+      const list = await createUserList(category, isPrivate, token);
+      logger.log("[stars] bg | updateUserListsForItem...");
+      await updateUserListsForItem(repoNodeId, [list.id], token);
+      logger.log("[stars] bg | created+added to list:", list.name);
+      return list;
+    },
+    tabId,
+    owner,
+    repo,
+    "create list",
+    "[stars] bg",
+  );
+  if (newList === null) return null;
 
   await sendStatus(tabId, owner, repo, "saved", category);
   return {
@@ -199,49 +227,57 @@ async function handleStarClick(
     await sendStatus(tabId, owner, repo, "categorizing");
 
     // Validate token scope
-    try {
-      logger.log("[stars] bg | validating token...");
-      await validateToken(token);
-      logger.log("[stars] bg | token valid");
-    } catch (err) {
-      logger.error("[stars] bg | token validation FAILED:", err);
-      const msg =
-        err instanceof Error ? err.message : "Token validation failed";
-      await sendStatus(tabId, owner, repo, "error", undefined, msg);
-      return;
-    }
+    const tokenOk = await withErrorHandling(
+      async () => {
+        logger.log("[stars] bg | validating token...");
+        await validateToken(token);
+        logger.log("[stars] bg | token valid");
+        return true;
+      },
+      tabId,
+      owner,
+      repo,
+      "token validation",
+      "[stars] bg",
+    );
+    if (tokenOk === null) return;
 
     // Fetch repo metadata
-    let metadata: RepoMetadata;
-    try {
-      logger.log("[stars] bg | fetchRepoMetadata...");
-      metadata = await fetchRepoMetadata(owner, repo, token);
-      logger.log(
-        "[stars] bg | metadata:",
-        metadata.language,
-        metadata.topics?.length,
-        "topics",
-      );
-    } catch (err) {
-      logger.error("[stars] bg | fetchRepoMetadata FAILED:", err);
-      const msg =
-        err instanceof Error ? err.message : "fetchRepoMetadata failed";
-      await sendStatus(tabId, owner, repo, "error", undefined, msg);
-      return;
-    }
+    const metadata = await withErrorHandling(
+      async () => {
+        logger.log("[stars] bg | fetchRepoMetadata...");
+        const meta = await fetchRepoMetadata(owner, repo, token);
+        logger.log(
+          "[stars] bg | metadata:",
+          meta.language,
+          meta.topics?.length,
+          "topics",
+        );
+        return meta;
+      },
+      tabId,
+      owner,
+      repo,
+      "fetchRepoMetadata",
+      "[stars] bg",
+    );
+    if (metadata === null) return;
 
     // Get viewer lists
-    let lists: GitHubList[];
-    try {
-      logger.log("[stars] bg | getViewerLists...");
-      lists = await getViewerLists(token);
-      logger.log("[stars] bg | lists:", lists.length);
-    } catch (err) {
-      logger.error("[stars] bg | getViewerLists FAILED:", err);
-      const msg = err instanceof Error ? err.message : "getViewerLists failed";
-      await sendStatus(tabId, owner, repo, "error", undefined, msg);
-      return;
-    }
+    const lists = await withErrorHandling(
+      async () => {
+        logger.log("[stars] bg | getViewerLists...");
+        const result = await getViewerLists(token);
+        logger.log("[stars] bg | lists:", result.length);
+        return result;
+      },
+      tabId,
+      owner,
+      repo,
+      "getViewerLists",
+      "[stars] bg",
+    );
+    if (lists === null) return;
 
     const client = buildClient(settings);
     if (!client) {
@@ -257,18 +293,21 @@ async function handleStarClick(
     }
 
     // Resolve repo node ID and ensure it's starred before list operations
-    let repoNodeId: string;
-    try {
-      logger.log("[stars] bg | getRepoNodeId...");
-      repoNodeId = await getRepoNodeId(owner, repo, token);
-      logger.log("[stars] bg | starRepository...");
-      await starRepository(repoNodeId, token);
-    } catch (err) {
-      logger.error("[stars] bg | star operation FAILED:", err);
-      const msg = err instanceof Error ? err.message : "Star operation failed";
-      await sendStatus(tabId, owner, repo, "error", undefined, msg);
-      return;
-    }
+    const repoNodeId = await withErrorHandling(
+      async () => {
+        logger.log("[stars] bg | getRepoNodeId...");
+        const id = await getRepoNodeId(owner, repo, token);
+        logger.log("[stars] bg | starRepository...");
+        await starRepository(id, token);
+        return id;
+      },
+      tabId,
+      owner,
+      repo,
+      "star operation",
+      "[stars] bg",
+    );
+    if (repoNodeId === null) return;
 
     // AI categorize
     logger.log(
@@ -368,44 +407,50 @@ async function handleRegenerate(
     }
 
     // Remove repo from current list (pass empty listIds to clear all lists)
-    try {
-      logger.log("[regenerate] bg | removing from list:", prevState.listName);
-      await updateUserListsForItem(prevState.repoNodeId, [], token);
-    } catch (err) {
-      logger.error("[regenerate] bg | remove from list FAILED:", err);
-      const msg =
-        err instanceof Error ? err.message : "Removing from list failed";
-      await sendStatus(tabId, owner, repo, "error", undefined, msg);
-      return;
-    }
+    const removeOk = await withErrorHandling(
+      async () => {
+        logger.log("[regenerate] bg | removing from list:", prevState.listName);
+        await updateUserListsForItem(prevState.repoNodeId, [], token);
+        return true;
+      },
+      tabId,
+      owner,
+      repo,
+      "remove from list",
+      "[regenerate] bg",
+    );
+    if (removeOk === null) return;
 
     // Delete the list if it was created by this star action
     if (prevState.isNewList) {
-      try {
-        logger.log(
-          "[regenerate] bg | deleting empty list:",
-          prevState.listName,
-        );
-        await deleteUserList(prevState.listId, token);
-      } catch (err) {
-        logger.error("[regenerate] bg | delete list FAILED:", err);
-        const msg =
-          err instanceof Error ? err.message : "Deleting empty list failed";
-        await sendStatus(tabId, owner, repo, "error", undefined, msg);
-        return;
-      }
+      const deleteOk = await withErrorHandling(
+        async () => {
+          logger.log(
+            "[regenerate] bg | deleting empty list:",
+            prevState.listName,
+          );
+          await deleteUserList(prevState.listId, token);
+          return true;
+        },
+        tabId,
+        owner,
+        repo,
+        "delete list",
+        "[regenerate] bg",
+      );
+      if (deleteOk === null) return;
     }
 
     // Get viewer lists (to re-match)
-    let lists: GitHubList[];
-    try {
-      lists = await getViewerLists(token);
-    } catch (err) {
-      logger.error("[regenerate] bg | getViewerLists FAILED:", err);
-      const msg = err instanceof Error ? err.message : "getViewerLists failed";
-      await sendStatus(tabId, owner, repo, "error", undefined, msg);
-      return;
-    }
+    const lists = await withErrorHandling(
+      () => getViewerLists(token),
+      tabId,
+      owner,
+      repo,
+      "getViewerLists",
+      "[regenerate] bg",
+    );
+    if (lists === null) return;
 
     const allRejected = [currentCategory, ...previousCategories];
     logger.log("[regenerate] bg | AI categorize | rejected:", allRejected);
