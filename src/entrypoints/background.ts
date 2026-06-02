@@ -19,10 +19,8 @@ import {
   deleteUserList,
   type GitHubList,
 } from "@/shared/github-lists";
-import { AnthropicClient } from "@/shared/providers/anthropic";
-import { OpenAIClient } from "@/shared/providers/openai";
-import { OpenCodeClient } from "@/shared/providers/opencode";
 import type { AiProviderClient } from "@/shared/providers/base";
+import { createProviderClient } from "@/shared/providers/factory";
 import { categorizeRepository } from "@/shared/categorizer";
 import { logger } from "@/shared/logger";
 
@@ -279,7 +277,10 @@ async function handleStarClick(
     );
     if (lists === null) return;
 
-    const client = buildClient(settings);
+    const client = createProviderClient(
+      settings.activeProvider,
+      settings.providers[settings.activeProvider],
+    );
     if (!client) {
       await sendStatus(
         tabId,
@@ -393,7 +394,10 @@ async function handleRegenerate(
 
     await sendStatus(tabId, owner, repo, "categorizing");
 
-    const client = buildClient(settings);
+    const client = createProviderClient(
+      settings.activeProvider,
+      settings.providers[settings.activeProvider],
+    );
     if (!client) {
       await sendStatus(
         tabId,
@@ -500,31 +504,5 @@ async function sendStatus(
     await browser.tabs.sendMessage(tabId, message);
   } catch {
     // Tab may have been closed
-  }
-}
-
-function buildClient(settings: ExtensionSettings): AiProviderClient | null {
-  const p = settings.activeProvider;
-  const c = settings.providers[p];
-
-  switch (p) {
-    case "anthropic":
-      if (!c.apiKey) return null;
-      return new AnthropicClient(
-        c.apiKey,
-        c.model ?? "claude-haiku-4-5-20251001",
-      );
-    case "openai":
-      if (!c.apiKey) return null;
-      return new OpenAIClient(c.apiKey, c.model ?? "gpt-5-mini");
-    case "opencode":
-      if (!c.apiKey) return null;
-      return new OpenCodeClient(
-        c.apiKey,
-        c.model ?? "deepseek-v4-flash",
-        settings.providers.opencode.endpoint,
-      );
-    default:
-      return null;
   }
 }

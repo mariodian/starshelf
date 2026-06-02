@@ -1,8 +1,6 @@
 import { storage } from "@/shared/storage";
 import type { ExtensionSettings } from "@/shared/storage";
-import { OpenAIClient } from "@/shared/providers/openai";
-import { AnthropicClient } from "@/shared/providers/anthropic";
-import { OpenCodeClient } from "@/shared/providers/opencode";
+import { createProviderClient } from "@/shared/providers/factory";
 
 let settings: ExtensionSettings;
 const DIRTY_MASK = "\u2022".repeat(12);
@@ -152,8 +150,8 @@ function wire() {
     el.fetchModels.textContent = "Fetching...";
 
     try {
-      const client = buildFetchClient(p);
-      if (!client) throw new Error("Unknown provider");
+      const client = createProviderClient(p, settings.providers[p]);
+      if (!client?.listModels) throw new Error("Unknown provider");
       const models = await client.listModels();
       const saved = c.model;
       el.modelSelect.innerHTML = "";
@@ -281,27 +279,6 @@ function setProviderConfig(
         ...update,
       };
       break;
-  }
-}
-
-function buildFetchClient(provider: ExtensionSettings["activeProvider"]) {
-  switch (provider) {
-    case "openai":
-      return new OpenAIClient(
-        settings.providers.openai.apiKey!,
-        settings.providers.openai.model ?? "gpt-4o",
-      );
-    case "anthropic":
-      return new AnthropicClient(
-        settings.providers.anthropic.apiKey!,
-        settings.providers.anthropic.model ?? "claude-sonnet-4-20250514",
-      );
-    case "opencode":
-      return new OpenCodeClient(
-        settings.providers.opencode.apiKey!,
-        settings.providers.opencode.model ?? "gpt-4o",
-        settings.providers.opencode.endpoint,
-      );
   }
 }
 
