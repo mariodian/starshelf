@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.0.4] - 2026-06-02
+
+### Added
+
+- **Regenerate categories** button in the popup to re-categorize already-assigned starred repositories without clearing existing assignments
+
+### Changed
+
+- Codebase refactored for maintainability: extracted **provider client factory**, **error handling wrapper**, **URL parsing utility**, and **category assignment logic** into dedicated modules
+- Removed deprecated `categorizeRepository`, `readmeExcerpt`, and `readEnvSettings` functions
+
 ## [v0.0.3] - 2026-05-29
 
 ### Fixed
