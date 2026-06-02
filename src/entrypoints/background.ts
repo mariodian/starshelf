@@ -21,7 +21,6 @@ import {
 } from "@/shared/github-lists";
 import type { AiProviderClient } from "@/shared/providers/base";
 import { createProviderClient } from "@/shared/providers/factory";
-import { categorizeRepository } from "@/shared/categorizer";
 import { logger } from "@/shared/logger";
 
 export default defineBackground(() => {
@@ -103,8 +102,7 @@ async function categorizeAndAssign(
 
   const category = await withErrorHandling(
     async () => {
-      const cat = await categorizeRepository(
-        client,
+      const cat = await client.categorize(
         metadata,
         owner,
         repo,
