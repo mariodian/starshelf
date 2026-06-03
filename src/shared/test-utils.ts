@@ -35,3 +35,51 @@ export function mockGraphqlError(
 ): Response {
   return mockJsonResponse({ data: null, errors });
 }
+
+export function graphqlDispatcher(overrides: Record<string, unknown>) {
+  const r: Record<string, unknown> = {
+    createUserList: {
+      createUserList: {
+        list: { id: "L_NEW", name: "New", isPrivate: true },
+      },
+    },
+    updateUserListsForItem: {
+      updateUserListsForItem: { clientMutationId: null },
+    },
+    listItems: {
+      viewer: { lists: { nodes: [] } },
+    },
+    lists: {
+      viewer: { lists: { nodes: [] } },
+    },
+    ...overrides,
+  };
+
+  return async (...args: unknown[]) => {
+    const init = args[1] as RequestInit | undefined;
+    const body = JSON.parse((init?.body as string) || "{}");
+    const query: string = body.query || "";
+
+    const key = query.includes("createUserList")
+      ? "createUserList"
+      : query.includes("updateUserListsForItem")
+        ? "updateUserListsForItem"
+        : query.includes("starredRepositories")
+          ? "starredRepositories"
+          : query.includes("lists(first:") && query.includes("items(")
+            ? "listItems"
+            : query.includes("lists(first:")
+              ? "lists"
+              : null;
+
+    if (key && key in r) {
+      return mockGraphqlResponse(r[key]);
+    }
+
+    return {
+      ok: false,
+      status: 500,
+      text: async () => `Unmocked GraphQL query: ${query.slice(0, 100)}`,
+    } as Response;
+  };
+}

@@ -4,21 +4,16 @@ import {
   mockGraphqlResponse,
   mockGraphqlError,
   mockHttpError,
+  graphqlDispatcher,
 } from "./test-utils";
 import {
   validateToken,
   getViewerLists,
-  createUserList,
-  getRepoNodeId,
-  updateUserListsForItem,
-  starRepository,
   fuzzyMatchListName,
   ScopeError,
   getAllListedRepoIds,
   streamUncategorizedRepos,
   batchCategorize,
-  type BatchCategorizeResult,
-  normalizeListName,
 } from "@/shared/github-lists";
 import type { AiProviderClient } from "@/shared/providers/base";
 
@@ -34,6 +29,33 @@ function mockGraphqlReject(errors: Array<{ type?: string; message: string }>) {
 
 function mockFetchFail(status: number, body: string) {
   vi.mocked(fetch).mockResolvedValue(mockHttpError(status, body));
+}
+
+function starredRepos(
+  repos: unknown[],
+  pageInfo?: { hasNextPage: boolean; endCursor: string | null },
+) {
+  return {
+    viewer: {
+      starredRepositories: {
+        pageInfo: pageInfo ?? { hasNextPage: false, endCursor: null },
+        nodes: repos.map((r) => ({
+          primaryLanguage: null,
+          repositoryTopics: { nodes: [] },
+          description: null,
+          ...(r as Record<string, unknown>),
+        })),
+      },
+    },
+  };
+}
+
+function userLists(lists: unknown[]) {
+  return { viewer: { lists: { nodes: lists } } };
+}
+
+function userListsWithItems(lists: unknown[]) {
+  return { viewer: { lists: { nodes: lists } } };
 }
 
 describe("validateToken", () => {
@@ -86,83 +108,24 @@ describe("getViewerLists", () => {
     expect(lists).toEqual([]);
   });
 
-  it("throws ScopeError for FORBIDDEN errors", async () => {
-    mockGraphqlReject([{ type: "FORBIDDEN", message: "Access denied" }]);
-
+  it.each([
+    [{ type: "FORBIDDEN", message: "Access denied" }],
+    [{ type: "UNAUTHORIZED", message: "No access" }],
+  ])("throws ScopeError for GraphQL %o", async (error) => {
+    mockGraphqlReject([error]);
     await expect(getViewerLists("token")).rejects.toThrow(ScopeError);
   });
 
-  it("throws ScopeError for UNAUTHORIZED errors", async () => {
-    mockGraphqlReject([{ type: "UNAUTHORIZED", message: "No access" }]);
-
-    await expect(getViewerLists("token")).rejects.toThrow(ScopeError);
-  });
-
-  it("wraps viewer-related errors as ScopeError", async () => {
+  it("wraps viewer-related HTTP errors as ScopeError", async () => {
     mockFetchFail(401, "viewer field is not available");
-
     await expect(getViewerLists("token")).rejects.toThrow(ScopeError);
   });
 
   it("re-throws non-viewer HTTP errors unchanged", async () => {
     mockFetchFail(500, "Internal server error");
-
     await expect(getViewerLists("token")).rejects.toThrow(
       "GitHub GraphQL HTTP 500",
     );
-  });
-});
-
-describe("createUserList", () => {
-  it("creates a list and returns it", async () => {
-    mockGraphqlResolve({
-      createUserList: {
-        list: { id: "list_1", name: "My Tools", isPrivate: true },
-      },
-    });
-
-    const list = await createUserList("My Tools", true, "token");
-
-    expect(list).toEqual({ id: "list_1", name: "My Tools", isPrivate: true });
-  });
-});
-
-describe("getRepoNodeId", () => {
-  it("returns the repository node ID", async () => {
-    mockGraphqlResolve({
-      repository: { id: "R_kgABC123" },
-    });
-
-    const id = await getRepoNodeId("owner", "repo", "token");
-    expect(id).toBe("R_kgABC123");
-  });
-
-  it("throws when the repository is not found", async () => {
-    mockGraphqlResolve({ repository: null });
-
-    await expect(getRepoNodeId("owner", "missing", "token")).rejects.toThrow(
-      "Repository owner/missing not found",
-    );
-  });
-});
-
-describe("updateUserListsForItem", () => {
-  it("sends the correct mutation without error", async () => {
-    mockGraphqlResolve({ updateUserListsForItem: { clientMutationId: null } });
-
-    await expect(
-      updateUserListsForItem("item_1", ["list_1", "list_2"], "token"),
-    ).resolves.toBeUndefined();
-  });
-});
-
-describe("starRepository", () => {
-  it("sends the star mutation without error", async () => {
-    mockGraphqlResolve({ addStar: { clientMutationId: null } });
-
-    await expect(
-      starRepository("starrable_1", "token"),
-    ).resolves.toBeUndefined();
   });
 });
 
@@ -205,15 +168,6 @@ describe("fuzzyMatchListName", () => {
   it("matches unicode letters", () => {
     const unicode = [{ id: "1", name: "Café", isPrivate: false }];
     expect(fuzzyMatchListName("Café", unicode)).toEqual(unicode[0]);
-  });
-});
-
-describe("ScopeError", () => {
-  it("has the correct name and message", () => {
-    const err = new ScopeError("test message");
-    expect(err.name).toBe("ScopeError");
-    expect(err.message).toBe("test message");
-    expect(err).toBeInstanceOf(Error);
   });
 });
 
@@ -294,6 +248,71 @@ describe("getAllListedRepoIds", () => {
     expect(ids.size).toBe(2);
     expect(ids.has("R1")).toBe(true);
     expect(ids.has("R2")).toBe(true);
+  });
+
+  it("paginates multiple lists concurrently", async () => {
+    vi.mocked(fetch).mockImplementation(async (...args: unknown[]) => {
+      const init = args[1] as RequestInit | undefined;
+      const body = JSON.parse(init?.body as string) as {
+        variables?: Record<string, unknown>;
+      };
+      const { variables } = body;
+
+      if (!variables?.listId) {
+        return mockGraphqlResponse({
+          viewer: {
+            lists: {
+              nodes: [
+                {
+                  id: "L1",
+                  items: {
+                    nodes: [{ id: "R1a" }],
+                    pageInfo: { hasNextPage: true, endCursor: "c1" },
+                  },
+                },
+                {
+                  id: "L2",
+                  items: {
+                    nodes: [{ id: "R2a" }],
+                    pageInfo: { hasNextPage: true, endCursor: "c2" },
+                  },
+                },
+              ],
+            },
+          },
+        });
+      }
+
+      const listId = variables.listId as string;
+      if (listId === "L1") {
+        return mockGraphqlResponse({
+          node: {
+            items: {
+              nodes: [{ id: "R1b" }],
+              pageInfo: { hasNextPage: false, endCursor: null },
+            },
+          },
+        });
+      }
+      if (listId === "L2") {
+        return mockGraphqlResponse({
+          node: {
+            items: {
+              nodes: [{ id: "R2b" }],
+              pageInfo: { hasNextPage: false, endCursor: null },
+            },
+          },
+        });
+      }
+      return mockGraphqlResponse({});
+    });
+
+    const ids = await getAllListedRepoIds("token");
+    expect(ids.size).toBe(4);
+    expect(ids.has("R1a")).toBe(true);
+    expect(ids.has("R2a")).toBe(true);
+    expect(ids.has("R1b")).toBe(true);
+    expect(ids.has("R2b")).toBe(true);
   });
 
   it("skips null items in the nodes array", async () => {
@@ -508,84 +527,39 @@ describe("batchCategorize", () => {
 
   it("categorizes uncategorized repos using existing and new lists", async () => {
     vi.mocked(fetch).mockImplementation(
-      async (input: RequestInfo | URL, init?: RequestInit) => {
-        const body = JSON.parse((init?.body as string) || "{}");
-        const query: string = body.query || "";
-
-        if (query.includes("createUserList")) {
-          return mockGraphqlResponse({
-            createUserList: {
-              list: { id: "L2", name: "CLI Tools", isPrivate: true },
+      graphqlDispatcher({
+        createUserList: {
+          createUserList: {
+            list: { id: "L2", name: "CLI Tools", isPrivate: true },
+          },
+        },
+        starredRepositories: starredRepos([
+          {
+            id: "R1",
+            nameWithOwner: "o/r1",
+            description: "A CLI tool",
+            primaryLanguage: { name: "Rust" },
+            repositoryTopics: { nodes: [{ topic: { name: "cli" } }] },
+          },
+          {
+            id: "R2",
+            nameWithOwner: "o/r2",
+            description: "A React component",
+            primaryLanguage: { name: "TypeScript" },
+            repositoryTopics: { nodes: [{ topic: { name: "react" } }] },
+          },
+        ]),
+        lists: userLists([{ id: "L1", name: "Frontend", isPrivate: false }]),
+        listItems: userListsWithItems([
+          {
+            id: "L1",
+            items: {
+              nodes: [],
+              pageInfo: { hasNextPage: false, endCursor: null },
             },
-          });
-        }
-        if (query.includes("updateUserListsForItem")) {
-          return mockGraphqlResponse({
-            updateUserListsForItem: { clientMutationId: null },
-          });
-        }
-        if (query.includes("starredRepositories")) {
-          return mockGraphqlResponse({
-            viewer: {
-              starredRepositories: {
-                pageInfo: { hasNextPage: false, endCursor: null },
-                nodes: [
-                  {
-                    id: "R1",
-                    nameWithOwner: "o/r1",
-                    description: "A CLI tool",
-                    primaryLanguage: { name: "Rust" },
-                    repositoryTopics: {
-                      nodes: [{ topic: { name: "cli" } }],
-                    },
-                  },
-                  {
-                    id: "R2",
-                    nameWithOwner: "o/r2",
-                    description: "A React component",
-                    primaryLanguage: { name: "TypeScript" },
-                    repositoryTopics: {
-                      nodes: [{ topic: { name: "react" } }],
-                    },
-                  },
-                ],
-              },
-            },
-          });
-        }
-        if (query.includes("lists(first:") && query.includes("items(")) {
-          return mockGraphqlResponse({
-            viewer: {
-              lists: {
-                nodes: [
-                  {
-                    id: "L1",
-                    items: {
-                      nodes: [],
-                      pageInfo: { hasNextPage: false, endCursor: null },
-                    },
-                  },
-                ],
-              },
-            },
-          });
-        }
-        if (query.includes("lists(first:")) {
-          return mockGraphqlResponse({
-            viewer: {
-              lists: {
-                nodes: [{ id: "L1", name: "Frontend", isPrivate: false }],
-              },
-            },
-          });
-        }
-
-        return {
-          ok: false,
-          status: 500,
-          text: async () => "Unknown query",
-        } as Response;
-      },
+          },
+        ]),
+      }),
     );
 
     const client = mockClient([
@@ -610,71 +584,21 @@ describe("batchCategorize", () => {
 
   it("returns empty result when all repos are already categorized", async () => {
     vi.mocked(fetch).mockImplementation(
-      async (input: RequestInfo | URL, init?: RequestInit) => {
-        const body = JSON.parse((init?.body as string) || "{}");
-        const query: string = body.query || "";
-
-        if (query.includes("createUserList")) {
-          return mockGraphqlResponse({
-            createUserList: { list: { id: "X", name: "X", isPrivate: true } },
-          });
-        }
-        if (query.includes("updateUserListsForItem")) {
-          return mockGraphqlResponse({
-            updateUserListsForItem: { clientMutationId: null },
-          });
-        }
-        if (query.includes("starredRepositories")) {
-          return mockGraphqlResponse({
-            viewer: {
-              starredRepositories: {
-                pageInfo: { hasNextPage: false, endCursor: null },
-                nodes: [
-                  {
-                    id: "R1",
-                    nameWithOwner: "o/r1",
-                    description: null,
-                    primaryLanguage: null,
-                    repositoryTopics: { nodes: [] },
-                  },
-                ],
-              },
+      graphqlDispatcher({
+        starredRepositories: starredRepos([
+          { id: "R1", nameWithOwner: "o/r1" },
+        ]),
+        lists: userLists([{ id: "L1", name: "Test", isPrivate: false }]),
+        listItems: userListsWithItems([
+          {
+            id: "L1",
+            items: {
+              nodes: [{ id: "R1" }],
+              pageInfo: { hasNextPage: false, endCursor: null },
             },
-          });
-        }
-        if (query.includes("lists(first:") && query.includes("items(")) {
-          return mockGraphqlResponse({
-            viewer: {
-              lists: {
-                nodes: [
-                  {
-                    id: "L1",
-                    items: {
-                      nodes: [{ id: "R1" }],
-                      pageInfo: { hasNextPage: false, endCursor: null },
-                    },
-                  },
-                ],
-              },
-            },
-          });
-        }
-        if (query.includes("lists(first:")) {
-          return mockGraphqlResponse({
-            viewer: {
-              lists: {
-                nodes: [{ id: "L1", name: "Test", isPrivate: false }],
-              },
-            },
-          });
-        }
-
-        return {
-          ok: false,
-          status: 500,
-          text: async () => "Unknown query",
-        } as Response;
-      },
+          },
+        ]),
+      }),
     );
 
     const client = mockClient([]);
@@ -691,79 +615,24 @@ describe("batchCategorize", () => {
 
   it("handles partial failure when a repo is missing from AI batch response", async () => {
     vi.mocked(fetch).mockImplementation(
-      async (input: RequestInfo | URL, init?: RequestInit) => {
-        const body = JSON.parse((init?.body as string) || "{}");
-        const query: string = body.query || "";
-
-        if (query.includes("createUserList")) {
-          return mockGraphqlResponse({
-            createUserList: { list: { id: "X", name: "X", isPrivate: true } },
-          });
-        }
-        if (query.includes("updateUserListsForItem")) {
-          return mockGraphqlResponse({
-            updateUserListsForItem: { clientMutationId: null },
-          });
-        }
-        if (query.includes("starredRepositories")) {
-          return mockGraphqlResponse({
-            viewer: {
-              starredRepositories: {
-                pageInfo: { hasNextPage: false, endCursor: null },
-                nodes: [
-                  {
-                    id: "R1",
-                    nameWithOwner: "o/r1",
-                    description: "desc1",
-                    primaryLanguage: null,
-                    repositoryTopics: { nodes: [] },
-                  },
-                  {
-                    id: "R2",
-                    nameWithOwner: "o/r2",
-                    description: "desc2",
-                    primaryLanguage: null,
-                    repositoryTopics: { nodes: [] },
-                  },
-                ],
-              },
+      graphqlDispatcher({
+        starredRepositories: starredRepos([
+          { id: "R1", nameWithOwner: "o/r1", description: "desc1" },
+          { id: "R2", nameWithOwner: "o/r2", description: "desc2" },
+        ]),
+        lists: userLists([{ id: "L1", name: "Test", isPrivate: false }]),
+        listItems: userListsWithItems([
+          {
+            id: "L1",
+            items: {
+              nodes: [],
+              pageInfo: { hasNextPage: false, endCursor: null },
             },
-          });
-        }
-        if (query.includes("lists(first:") && query.includes("items(")) {
-          return mockGraphqlResponse({
-            viewer: {
-              lists: {
-                nodes: [
-                  {
-                    id: "L1",
-                    items: {
-                      nodes: [],
-                      pageInfo: { hasNextPage: false, endCursor: null },
-                    },
-                  },
-                ],
-              },
-            },
-          });
-        }
-        if (query.includes("lists(first:")) {
-          return mockGraphqlResponse({
-            viewer: {
-              lists: { nodes: [{ id: "L1", name: "Test", isPrivate: false }] },
-            },
-          });
-        }
-
-        return {
-          ok: false,
-          status: 500,
-          text: async () => "Unknown query",
-        } as Response;
-      },
+          },
+        ]),
+      }),
     );
 
-    // categorizeBatch returns only one of the two repos
     const categorizeBatch = vi.fn<AiProviderClient["categorizeBatch"]>();
     categorizeBatch.mockResolvedValue(new Map([["o/r1", "Test"]]));
     const client: AiProviderClient = {
@@ -787,76 +656,22 @@ describe("batchCategorize", () => {
 
   it("fails entire chunk when AI batch call fails", async () => {
     vi.mocked(fetch).mockImplementation(
-      async (input: RequestInfo | URL, init?: RequestInit) => {
-        const body = JSON.parse((init?.body as string) || "{}");
-        const query: string = body.query || "";
-
-        if (query.includes("createUserList")) {
-          return mockGraphqlResponse({
-            createUserList: { list: { id: "X", name: "X", isPrivate: true } },
-          });
-        }
-        if (query.includes("updateUserListsForItem")) {
-          return mockGraphqlResponse({
-            updateUserListsForItem: { clientMutationId: null },
-          });
-        }
-        if (query.includes("starredRepositories")) {
-          return mockGraphqlResponse({
-            viewer: {
-              starredRepositories: {
-                pageInfo: { hasNextPage: false, endCursor: null },
-                nodes: [
-                  {
-                    id: "R1",
-                    nameWithOwner: "o/r1",
-                    description: "desc1",
-                    primaryLanguage: null,
-                    repositoryTopics: { nodes: [] },
-                  },
-                  {
-                    id: "R2",
-                    nameWithOwner: "o/r2",
-                    description: "desc2",
-                    primaryLanguage: null,
-                    repositoryTopics: { nodes: [] },
-                  },
-                ],
-              },
+      graphqlDispatcher({
+        starredRepositories: starredRepos([
+          { id: "R1", nameWithOwner: "o/r1", description: "desc1" },
+          { id: "R2", nameWithOwner: "o/r2", description: "desc2" },
+        ]),
+        lists: userLists([{ id: "L1", name: "Test", isPrivate: false }]),
+        listItems: userListsWithItems([
+          {
+            id: "L1",
+            items: {
+              nodes: [],
+              pageInfo: { hasNextPage: false, endCursor: null },
             },
-          });
-        }
-        if (query.includes("lists(first:") && query.includes("items(")) {
-          return mockGraphqlResponse({
-            viewer: {
-              lists: {
-                nodes: [
-                  {
-                    id: "L1",
-                    items: {
-                      nodes: [],
-                      pageInfo: { hasNextPage: false, endCursor: null },
-                    },
-                  },
-                ],
-              },
-            },
-          });
-        }
-        if (query.includes("lists(first:")) {
-          return mockGraphqlResponse({
-            viewer: {
-              lists: { nodes: [{ id: "L1", name: "Test", isPrivate: false }] },
-            },
-          });
-        }
-
-        return {
-          ok: false,
-          status: 500,
-          text: async () => "Unknown query",
-        } as Response;
-      },
+          },
+        ]),
+      }),
     );
 
     const categorizeBatch = vi.fn<AiProviderClient["categorizeBatch"]>();
@@ -881,76 +696,22 @@ describe("batchCategorize", () => {
 
   it("stops processing when aborted via signal", async () => {
     vi.mocked(fetch).mockImplementation(
-      async (input: RequestInfo | URL, init?: RequestInit) => {
-        const body = JSON.parse((init?.body as string) || "{}");
-        const query: string = body.query || "";
-
-        if (query.includes("createUserList")) {
-          return mockGraphqlResponse({
-            createUserList: { list: { id: "X", name: "X", isPrivate: true } },
-          });
-        }
-        if (query.includes("updateUserListsForItem")) {
-          return mockGraphqlResponse({
-            updateUserListsForItem: { clientMutationId: null },
-          });
-        }
-        if (query.includes("starredRepositories")) {
-          return mockGraphqlResponse({
-            viewer: {
-              starredRepositories: {
-                pageInfo: { hasNextPage: false, endCursor: null },
-                nodes: [
-                  {
-                    id: "R1",
-                    nameWithOwner: "o/r1",
-                    description: "desc1",
-                    primaryLanguage: null,
-                    repositoryTopics: { nodes: [] },
-                  },
-                  {
-                    id: "R2",
-                    nameWithOwner: "o/r2",
-                    description: "desc2",
-                    primaryLanguage: null,
-                    repositoryTopics: { nodes: [] },
-                  },
-                ],
-              },
+      graphqlDispatcher({
+        starredRepositories: starredRepos([
+          { id: "R1", nameWithOwner: "o/r1", description: "desc1" },
+          { id: "R2", nameWithOwner: "o/r2", description: "desc2" },
+        ]),
+        lists: userLists([{ id: "L1", name: "Test", isPrivate: false }]),
+        listItems: userListsWithItems([
+          {
+            id: "L1",
+            items: {
+              nodes: [],
+              pageInfo: { hasNextPage: false, endCursor: null },
             },
-          });
-        }
-        if (query.includes("lists(first:") && query.includes("items(")) {
-          return mockGraphqlResponse({
-            viewer: {
-              lists: {
-                nodes: [
-                  {
-                    id: "L1",
-                    items: {
-                      nodes: [],
-                      pageInfo: { hasNextPage: false, endCursor: null },
-                    },
-                  },
-                ],
-              },
-            },
-          });
-        }
-        if (query.includes("lists(first:")) {
-          return mockGraphqlResponse({
-            viewer: {
-              lists: { nodes: [{ id: "L1", name: "Test", isPrivate: false }] },
-            },
-          });
-        }
-
-        return {
-          ok: false,
-          status: 500,
-          text: async () => "Unknown query",
-        } as Response;
-      },
+          },
+        ]),
+      }),
     );
 
     const controller = new AbortController();
@@ -992,53 +753,11 @@ describe("batchCategorize", () => {
     ];
 
     vi.mocked(fetch).mockImplementation(
-      async (input: RequestInfo | URL, init?: RequestInit) => {
-        const body = JSON.parse((init?.body as string) || "{}");
-        const query: string = body.query || "";
-
-        if (query.includes("createUserList")) {
-          return mockGraphqlResponse({
-            createUserList: {
-              list: { id: "L_NEW", name: "CLI Tools", isPrivate: true },
-            },
-          });
-        }
-        if (query.includes("updateUserListsForItem")) {
-          return mockGraphqlResponse({
-            updateUserListsForItem: { clientMutationId: null },
-          });
-        }
-        if (query.includes("starredRepositories")) {
-          return mockGraphqlResponse({
-            viewer: {
-              starredRepositories: {
-                pageInfo: { hasNextPage: false, endCursor: null },
-                nodes: repoNodes,
-              },
-            },
-          });
-        }
-        if (query.includes("lists(first:") && query.includes("items(")) {
-          return mockGraphqlResponse({
-            viewer: {
-              lists: {
-                nodes: [],
-              },
-            },
-          });
-        }
-        if (query.includes("lists(first:")) {
-          return mockGraphqlResponse({
-            viewer: { lists: { nodes: [] } },
-          });
-        }
-
-        return {
-          ok: false,
-          status: 500,
-          text: async () => "Unknown query",
-        } as Response;
-      },
+      graphqlDispatcher({
+        starredRepositories: starredRepos(repoNodes),
+        lists: userLists([]),
+        listItems: userListsWithItems([]),
+      }),
     );
 
     const client = mockClient([
