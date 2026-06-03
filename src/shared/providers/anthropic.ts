@@ -1,6 +1,11 @@
-import type { AiProviderClient } from "./base";
+import type { AiProviderClient, BatchCategorizeRepo } from "./base";
 import type { RepoMetadata } from "../github";
-import { buildPrompt, cleanCategory } from "./base";
+import {
+  buildPrompt,
+  cleanCategory,
+  buildBatchPrompt,
+  parseBatchResponse,
+} from "./base";
 
 export class AnthropicClient implements AiProviderClient {
   readonly name = "Anthropic";
@@ -78,5 +83,51 @@ export class AnthropicClient implements AiProviderClient {
       throw new Error("Anthropic returned empty response");
     }
     return cleanCategory(data.content[0].text);
+  }
+
+  async categorizeBatch(
+    repos: BatchCategorizeRepo[],
+    existingLists: string[],
+    enableEmojis = false,
+    enableCategoryPrefix = false,
+    autoFormat = true,
+    previousCategories: string[] = [],
+    signal?: AbortSignal,
+  ): Promise<Map<string, string>> {
+    const prompt = buildBatchPrompt(
+      repos,
+      existingLists,
+      enableEmojis,
+      enableCategoryPrefix,
+      autoFormat,
+      previousCategories,
+    );
+
+    const response = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": this.apiKey,
+        "anthropic-version": "2023-06-01",
+        "anthropic-dangerous-direct-browser-access": "true",
+      },
+      body: JSON.stringify({
+        model: this.model,
+        max_tokens: 4096,
+        messages: [{ role: "user", content: prompt }],
+      }),
+      signal,
+    });
+
+    if (!response.ok) {
+      const body = await response.text();
+      throw new Error(`Anthropic API error ${response.status}: ${body}`);
+    }
+
+    const data = await response.json();
+    if (!data.content?.[0]?.text) {
+      throw new Error("Anthropic returned empty response");
+    }
+    return parseBatchResponse(data.content[0].text);
   }
 }

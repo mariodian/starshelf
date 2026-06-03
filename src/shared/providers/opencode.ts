@@ -1,6 +1,11 @@
-import type { AiProviderClient } from "./base";
+import type { AiProviderClient, BatchCategorizeRepo } from "./base";
 import type { RepoMetadata } from "../github";
-import { buildPrompt, cleanCategory } from "./base";
+import {
+  buildPrompt,
+  cleanCategory,
+  buildBatchPrompt,
+  parseBatchResponse,
+} from "./base";
 
 // OpenCode Zen and Go use an OpenAI-compatible chat completions API.
 // Model IDs follow the pattern provider_id/model_id (e.g. opencode/gpt-5.1-codex).
@@ -98,6 +103,63 @@ export class OpenCodeClient implements AiProviderClient {
       const extracted = extractCategory(reasoning);
       if (extracted) return cleanCategory(extracted);
     }
+
+    throw new Error("OpenCode returned empty response");
+  }
+
+  async categorizeBatch(
+    repos: BatchCategorizeRepo[],
+    existingLists: string[],
+    enableEmojis = false,
+    enableCategoryPrefix = false,
+    autoFormat = true,
+    previousCategories: string[] = [],
+    signal?: AbortSignal,
+  ): Promise<Map<string, string>> {
+    const prompt = buildBatchPrompt(
+      repos,
+      existingLists,
+      enableEmojis,
+      enableCategoryPrefix,
+      autoFormat,
+      previousCategories,
+    );
+
+    const response = await fetch(`${this.baseUrl}/chat/completions`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${this.apiKey}`,
+      },
+      body: JSON.stringify({
+        model: this.model,
+        messages: [
+          {
+            role: "system",
+            content:
+              "You are a GitHub repo classifier. Categorize each repo using at most 3 nouns. Return a JSON object mapping repo full names to category labels. Output ONLY the JSON.",
+          },
+          { role: "user", content: prompt },
+        ],
+        max_tokens: 4096,
+        temperature: 0,
+      }),
+      signal,
+    });
+
+    if (!response.ok) {
+      const body = await response.text();
+      throw new Error(`OpenCode API error ${response.status}: ${body}`);
+    }
+
+    const data = await response.json();
+    const choice = data.choices?.[0];
+
+    const content = choice?.message?.content;
+    if (content) return parseBatchResponse(content);
+
+    const reasoning = choice?.message?.reasoning_content;
+    if (reasoning) return parseBatchResponse(reasoning);
 
     throw new Error("OpenCode returned empty response");
   }

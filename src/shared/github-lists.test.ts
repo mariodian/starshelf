@@ -18,6 +18,7 @@ import {
   streamUncategorizedRepos,
   batchCategorize,
   type BatchCategorizeResult,
+  normalizeListName,
 } from "@/shared/github-lists";
 import type { AiProviderClient } from "@/shared/providers/base";
 
@@ -499,12 +500,10 @@ describe("batchCategorize", () => {
     vi.unstubAllGlobals();
   });
 
-  function mockClient(results: string[]): AiProviderClient {
-    const categorize = vi.fn<AiProviderClient["categorize"]>();
-    for (const r of results) {
-      categorize.mockResolvedValueOnce(r);
-    }
-    return { name: "test", categorize };
+  function mockClient(catMap: [string, string][]): AiProviderClient {
+    const categorizeBatch = vi.fn<AiProviderClient["categorizeBatch"]>();
+    categorizeBatch.mockResolvedValue(new Map(catMap));
+    return { name: "test", categorize: vi.fn(), categorizeBatch };
   }
 
   it("categorizes uncategorized repos using existing and new lists", async () => {
@@ -589,7 +588,10 @@ describe("batchCategorize", () => {
       },
     );
 
-    const client = mockClient(["CLI Tools", "Frontend"]);
+    const client = mockClient([
+      ["o/r1", "CLI Tools"],
+      ["o/r2", "Frontend"],
+    ]);
     const onProgress = vi.fn();
 
     const result = await batchCategorize({
@@ -602,10 +604,8 @@ describe("batchCategorize", () => {
     expect(result.categorized).toBe(2);
     expect(result.failed).toBe(0);
     expect(result.cancelled).toBe(false);
-    expect(client.categorize).toHaveBeenCalledTimes(2);
-    expect(onProgress).toHaveBeenCalledTimes(2);
-    expect(onProgress).toHaveBeenCalledWith(1, "o/r1");
-    expect(onProgress).toHaveBeenCalledWith(2, "o/r2");
+    expect(client.categorizeBatch).toHaveBeenCalledTimes(1);
+    expect(onProgress).toHaveBeenCalledTimes(6);
   });
 
   it("returns empty result when all repos are already categorized", async () => {
@@ -686,10 +686,10 @@ describe("batchCategorize", () => {
 
     expect(result.categorized).toBe(0);
     expect(result.failed).toBe(0);
-    expect(client.categorize).not.toHaveBeenCalled();
+    expect(client.categorizeBatch).not.toHaveBeenCalled();
   });
 
-  it("handles partial failure and collects errors", async () => {
+  it("handles partial failure when a repo is missing from AI batch response", async () => {
     vi.mocked(fetch).mockImplementation(
       async (input: RequestInfo | URL, init?: RequestInit) => {
         const body = JSON.parse((init?.body as string) || "{}");
@@ -763,12 +763,13 @@ describe("batchCategorize", () => {
       },
     );
 
+    // categorizeBatch returns only one of the two repos
+    const categorizeBatch = vi.fn<AiProviderClient["categorizeBatch"]>();
+    categorizeBatch.mockResolvedValue(new Map([["o/r1", "Test"]]));
     const client: AiProviderClient = {
       name: "test",
-      categorize: vi
-        .fn()
-        .mockResolvedValueOnce("Test")
-        .mockRejectedValueOnce(new Error("AI error")),
+      categorize: vi.fn(),
+      categorizeBatch,
     };
 
     const result = await batchCategorize({
@@ -781,7 +782,101 @@ describe("batchCategorize", () => {
     expect(result.failed).toBe(1);
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0].repoName).toBe("o/r2");
-    expect(result.errors[0].error).toBe("AI error");
+    expect(result.errors[0].error).toBe("No category returned for repo");
+  });
+
+  it("fails entire chunk when AI batch call fails", async () => {
+    vi.mocked(fetch).mockImplementation(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const body = JSON.parse((init?.body as string) || "{}");
+        const query: string = body.query || "";
+
+        if (query.includes("createUserList")) {
+          return mockGraphqlResponse({
+            createUserList: { list: { id: "X", name: "X", isPrivate: true } },
+          });
+        }
+        if (query.includes("updateUserListsForItem")) {
+          return mockGraphqlResponse({
+            updateUserListsForItem: { clientMutationId: null },
+          });
+        }
+        if (query.includes("starredRepositories")) {
+          return mockGraphqlResponse({
+            viewer: {
+              starredRepositories: {
+                pageInfo: { hasNextPage: false, endCursor: null },
+                nodes: [
+                  {
+                    id: "R1",
+                    nameWithOwner: "o/r1",
+                    description: "desc1",
+                    primaryLanguage: null,
+                    repositoryTopics: { nodes: [] },
+                  },
+                  {
+                    id: "R2",
+                    nameWithOwner: "o/r2",
+                    description: "desc2",
+                    primaryLanguage: null,
+                    repositoryTopics: { nodes: [] },
+                  },
+                ],
+              },
+            },
+          });
+        }
+        if (query.includes("lists(first:") && query.includes("items(")) {
+          return mockGraphqlResponse({
+            viewer: {
+              lists: {
+                nodes: [
+                  {
+                    id: "L1",
+                    items: {
+                      nodes: [],
+                      pageInfo: { hasNextPage: false, endCursor: null },
+                    },
+                  },
+                ],
+              },
+            },
+          });
+        }
+        if (query.includes("lists(first:")) {
+          return mockGraphqlResponse({
+            viewer: {
+              lists: { nodes: [{ id: "L1", name: "Test", isPrivate: false }] },
+            },
+          });
+        }
+
+        return {
+          ok: false,
+          status: 500,
+          text: async () => "Unknown query",
+        } as Response;
+      },
+    );
+
+    const categorizeBatch = vi.fn<AiProviderClient["categorizeBatch"]>();
+    categorizeBatch.mockRejectedValue(new Error("AI API rate limited"));
+    const client: AiProviderClient = {
+      name: "test",
+      categorize: vi.fn(),
+      categorizeBatch,
+    };
+
+    const result = await batchCategorize({
+      token: "token",
+      client,
+      settings: { listPrivacy: "private" },
+    });
+
+    expect(result.categorized).toBe(0);
+    expect(result.failed).toBe(2);
+    expect(result.errors).toHaveLength(2);
+    expect(result.errors[0].error).toBe("AI API rate limited");
   });
 
   it("stops processing when aborted via signal", async () => {
@@ -859,7 +954,10 @@ describe("batchCategorize", () => {
     );
 
     const controller = new AbortController();
-    const client = mockClient(["Test", "Test"]);
+    const client = mockClient([
+      ["o/r1", "Test"],
+      ["o/r2", "Test"],
+    ]);
 
     const resultPromise = batchCategorize({
       token: "token",
@@ -875,7 +973,7 @@ describe("batchCategorize", () => {
     expect(result.cancelled).toBe(true);
   });
 
-  it("reuses newly created lists for subsequent repos", async () => {
+  it("categorizes multiple repos with one batch AI call", async () => {
     const repoNodes = [
       {
         id: "R1",
@@ -943,14 +1041,19 @@ describe("batchCategorize", () => {
       },
     );
 
-    const client = mockClient(["CLI Tools", "CLI Tools"]);
+    const client = mockClient([
+      ["o/r1", "CLI Tools"],
+      ["o/r2", "CLI Tools"],
+    ]);
 
-    await batchCategorize({
+    const result = await batchCategorize({
       token: "token",
       client,
       settings: { listPrivacy: "private" },
     });
 
-    expect(client.categorize).toHaveBeenCalledTimes(2);
+    expect(result.categorized).toBe(2);
+    expect(result.failed).toBe(0);
+    expect(client.categorizeBatch).toHaveBeenCalledTimes(1);
   });
 });

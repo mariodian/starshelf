@@ -1,8 +1,4 @@
-import type {
-  BatchStatus,
-  BatchProgressMessage,
-  BackgroundMessage,
-} from "@/shared/types/messages";
+import type { BatchStatus, BackgroundMessage } from "@/shared/types/messages";
 
 export function initBatchUI() {
   const startBtn = document.getElementById("startBatch") as HTMLButtonElement;
@@ -14,7 +10,7 @@ export function initBatchUI() {
   loadStatus();
 
   function loadStatus() {
-    browser.storage.local
+    browser.storage.session
       .get("batchStatus")
       .then((r) => r.batchStatus as BatchStatus | undefined)
       .then((status) => renderStatus(status ?? { state: "idle" }));
@@ -31,16 +27,19 @@ export function initBatchUI() {
       case "running":
         startBtn.style.display = "none";
         cancelBtn.style.display = "";
-        statusText.textContent =
-          status.current > 0
-            ? `Processing ${status.current}: ${status.currentRepo}`
-            : "Starting...";
+        if (status.message) {
+          statusText.textContent = status.message;
+        } else if (status.current > 0) {
+          statusText.textContent = `Processing ${status.current}: ${status.currentRepo}`;
+        } else {
+          statusText.textContent = "Starting...";
+        }
         break;
 
       case "done":
         startBtn.style.display = "";
         cancelBtn.style.display = "none";
-        statusText.textContent = `Done \u2014 ${status.categorized} categorized, ${status.skipped} skipped`;
+        statusText.textContent = `Done! ${status.categorized} categorized, ${status.skipped} skipped`;
         break;
 
       case "error":
@@ -52,7 +51,7 @@ export function initBatchUI() {
       case "cancelled":
         startBtn.style.display = "";
         cancelBtn.style.display = "none";
-        statusText.textContent = `Cancelled \u2014 ${status.categorized} categorized, ${status.skipped} skipped`;
+        statusText.textContent = `Stopped. ${status.categorized} categorized, ${status.skipped} skipped.`;
         break;
     }
   }
@@ -63,8 +62,6 @@ export function initBatchUI() {
       statusText.textContent = "Batch already running";
     } else if (reply?.error) {
       statusText.textContent = `Error: ${reply.error}`;
-    } else {
-      renderStatus({ state: "running", current: 0, currentRepo: "" });
     }
   });
 

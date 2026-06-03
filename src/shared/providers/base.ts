@@ -1,5 +1,12 @@
 import type { RepoMetadata } from "../github";
 
+export interface BatchCategorizeRepo {
+  nameWithOwner: string;
+  owner: string;
+  repo: string;
+  metadata: RepoMetadata;
+}
+
 export interface AiProviderClient {
   readonly name: string;
   categorize(
@@ -12,6 +19,15 @@ export interface AiProviderClient {
     autoFormat?: boolean,
     previousCategories?: string[],
   ): Promise<string>;
+  categorizeBatch(
+    repos: BatchCategorizeRepo[],
+    existingLists: string[],
+    enableEmojis?: boolean,
+    enableCategoryPrefix?: boolean,
+    autoFormat?: boolean,
+    previousCategories?: string[],
+    signal?: AbortSignal,
+  ): Promise<Map<string, string>>;
   listModels?(): Promise<string[]>;
 }
 
@@ -124,4 +140,109 @@ export function cleanCategory(raw: string): string {
     .replace(/[^\p{L}\p{N}\p{Emoji_Presentation}\s:]/gu, "")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+export function buildBatchPrompt(
+  repos: BatchCategorizeRepo[],
+  existingLists: string[],
+  enableEmojis = false,
+  enableCategoryPrefix = false,
+  autoFormat = true,
+  previousCategories: string[] = [],
+): string {
+  const detectedEmojis =
+    existingLists.length > 0 &&
+    existingLists.some((l) => /\p{Emoji_Presentation}/u.test(l));
+
+  const detectedCategories =
+    existingLists.length > 0 && existingLists.some((l) => /:/.test(l));
+
+  const useEmojis = enableEmojis || (autoFormat && detectedEmojis);
+  const useCategories =
+    enableCategoryPrefix || (autoFormat && detectedCategories);
+
+  const emojiHint = useEmojis
+    ? "Prefix each list name with a relevant emoji (e.g. 🔧 Dev, 🤖 AI, 🔒 Security)."
+    : "";
+
+  const styleHint =
+    existingLists.length > 0
+      ? `Match the formatting style (emoji, prefix pattern, casing) of existing lists: ${existingLists.join(", ")}, but still prefer broad names.`
+      : "";
+
+  const listsSection =
+    existingLists.length > 0
+      ? `Existing star lists: ${existingLists.join(", ")}. If a repo fits an existing list, return that exact name. Otherwise, pick a new one.`
+      : "";
+
+  const previousSection =
+    previousCategories.length > 0
+      ? `Previously suggested (and rejected) names: ${previousCategories.join(", ")}. Do NOT repeat any of these names.`
+      : "";
+
+  const categoryHint = useCategories
+    ? 'Use the format "Category: Name" (e.g. "Dev: JS Framework", "AI: LLM Agent", "Infra: Docker").'
+    : "";
+
+  const repoList = repos
+    .map(
+      (r) =>
+        `${r.nameWithOwner}
+  Description: ${r.metadata.description || "N/A"}
+  Language: ${r.metadata.language || "N/A"}
+  Topics: ${r.metadata.topics.join(", ") || "N/A"}`,
+    )
+    .join("\n\n---\n\n");
+
+  return unwrap(
+    trimNewlines(`
+Assign a single list name to each GitHub repository for organizing GitHub stars.
+
+${listsSection}
+${trimNewlines(styleHint)}
+${trimNewlines(emojiHint)}
+${trimNewlines(categoryHint)}
+${trimNewlines(previousSection)}
+
+Repositories:
+
+${repoList}
+
+Use at most 3 words per name. Prefer broad categories that could group 5+ similar repos. Name the type of tool, not the specific technique it uses.
+Return ONLY a JSON object mapping repository full names (exactly as provided) to category names. Like:
+{"owner/repo": "Category Name", "owner/repo2": "Another Category"}
+
+Output ONLY the JSON. No explanation, no markdown fences. Just the JSON object.
+`),
+  );
+}
+
+export function parseBatchResponse(raw: string): Map<string, string> {
+  let json = raw.trim();
+
+  const codeBlockMatch = json.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```/);
+  if (codeBlockMatch) {
+    json = codeBlockMatch[1].trim();
+  }
+
+  const startIdx = json.indexOf("{");
+  const endIdx = json.lastIndexOf("}");
+  if (startIdx !== -1 && endIdx > startIdx) {
+    json = json.slice(startIdx, endIdx + 1);
+  }
+
+  const parsed = JSON.parse(json);
+
+  const map = new Map<string, string>();
+  for (const [key, value] of Object.entries(parsed)) {
+    if (typeof value === "string") {
+      map.set(key, cleanCategory(value));
+    }
+  }
+
+  if (map.size === 0) {
+    throw new Error("No valid categories in batch response");
+  }
+
+  return map;
 }

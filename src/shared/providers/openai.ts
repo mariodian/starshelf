@@ -1,6 +1,11 @@
-import type { AiProviderClient } from "./base";
+import type { AiProviderClient, BatchCategorizeRepo } from "./base";
 import type { RepoMetadata } from "../github";
-import { buildPrompt, cleanCategory } from "./base";
+import {
+  buildPrompt,
+  cleanCategory,
+  buildBatchPrompt,
+  parseBatchResponse,
+} from "./base";
 
 export class OpenAIClient implements AiProviderClient {
   readonly name = "OpenAI";
@@ -62,6 +67,57 @@ export class OpenAIClient implements AiProviderClient {
       throw new Error("OpenAI returned empty response");
     }
     return cleanCategory(data.choices[0].message.content);
+  }
+
+  async categorizeBatch(
+    repos: BatchCategorizeRepo[],
+    existingLists: string[],
+    enableEmojis = false,
+    enableCategoryPrefix = false,
+    autoFormat = true,
+    previousCategories: string[] = [],
+    signal?: AbortSignal,
+  ): Promise<Map<string, string>> {
+    const prompt = buildBatchPrompt(
+      repos,
+      existingLists,
+      enableEmojis,
+      enableCategoryPrefix,
+      autoFormat,
+      previousCategories,
+    );
+
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${this.apiKey}`,
+      },
+      body: JSON.stringify({
+        model: this.model,
+        messages: [
+          {
+            role: "system",
+            content:
+              "You are a GitHub repo classifier. Categorize each repo using at most 3 nouns. Return a JSON object mapping repo full names to category labels. Output ONLY the JSON.",
+          },
+          { role: "user", content: prompt },
+        ],
+        max_completion_tokens: 4096,
+      }),
+      signal,
+    });
+
+    if (!response.ok) {
+      const body = await response.text();
+      throw new Error(`OpenAI API error ${response.status}: ${body}`);
+    }
+
+    const data = await response.json();
+    if (!data.choices?.[0]?.message?.content) {
+      throw new Error("OpenAI returned empty response");
+    }
+    return parseBatchResponse(data.choices[0].message.content);
   }
 
   async listModels(): Promise<string[]> {

@@ -1,7 +1,9 @@
 const GITHUB_GRAPHQL_URL = "https://api.github.com/graphql";
 
-export const BATCH_SIZE = 5;
-const UPDATE_DELAY_MS = 400;
+export const GRAPHQL_PAGE_SIZE = 100;
+export const AI_BATCH_SIZE = 10;
+export const CONCURRENCY_LIMIT = 5;
+export const UPDATE_DELAY_MS = 200;
 
 export interface GitHubList {
   id: string;
@@ -20,6 +22,7 @@ async function graphqlRequest<T>(
   token: string,
   query: string,
   variables?: Record<string, unknown>,
+  signal?: AbortSignal,
 ): Promise<T> {
   const res = await fetch(GITHUB_GRAPHQL_URL, {
     method: "POST",
@@ -28,6 +31,7 @@ async function graphqlRequest<T>(
       "Content-Type": "application/json",
     },
     body: JSON.stringify({ query, variables }),
+    signal,
   });
 
   if (!res.ok) {
@@ -58,7 +62,10 @@ export async function validateToken(token: string): Promise<void> {
   );
 }
 
-export async function getViewerLists(token: string): Promise<GitHubList[]> {
+export async function getViewerLists(
+  token: string,
+  signal?: AbortSignal,
+): Promise<GitHubList[]> {
   try {
     const data = await graphqlRequest<{
       viewer: {
@@ -79,6 +86,8 @@ export async function getViewerLists(token: string): Promise<GitHubList[]> {
           }
         }
       }`,
+      undefined,
+      signal,
     );
     return data.viewer.lists.nodes;
   } catch (err) {
@@ -96,6 +105,7 @@ export async function createUserList(
   name: string,
   isPrivate: boolean,
   token: string,
+  signal?: AbortSignal,
 ): Promise<GitHubList> {
   const data = await graphqlRequest<{
     createUserList: {
@@ -113,6 +123,7 @@ export async function createUserList(
       }
     }`,
     { input: { name, isPrivate } },
+    signal,
   );
   return data.createUserList.list;
 }
@@ -143,6 +154,7 @@ export async function updateUserListsForItem(
   itemId: string,
   listIds: string[],
   token: string,
+  signal?: AbortSignal,
 ): Promise<void> {
   await graphqlRequest(
     token,
@@ -152,6 +164,7 @@ export async function updateUserListsForItem(
       }
     }`,
     { input: { itemId, listIds } },
+    signal,
   );
 }
 
@@ -185,32 +198,75 @@ export async function deleteUserList(
   );
 }
 
+export function normalizeListName(name: string): string {
+  return name
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, " ")
+    .replace(/[^\p{L}\p{N}\s]/gu, "")
+    .trim();
+}
+
 export function fuzzyMatchListName(
   category: string,
   lists: GitHubList[],
 ): GitHubList | null {
-  const norm = (s: string) =>
-    s
-      .toLowerCase()
-      .trim()
-      .replace(/\s+/g, " ")
-      .replace(/[^\p{L}\p{N}\s]/gu, "")
-      .trim();
-
-  const target = norm(category);
+  const target = normalizeListName(category);
 
   for (const list of lists) {
-    if (norm(list.name) === target) return list;
+    if (normalizeListName(list.name) === target) return list;
   }
 
   return null;
 }
 
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+function delay(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve) => {
+    if (signal?.aborted) {
+      resolve();
+      return;
+    }
+    const timer = setTimeout(resolve, ms);
+    signal?.addEventListener(
+      "abort",
+      () => {
+        clearTimeout(timer);
+        resolve();
+      },
+      { once: true },
+    );
+  });
 }
 
-export async function getAllListedRepoIds(token: string): Promise<Set<string>> {
+class Semaphore {
+  private tasks: (() => void)[] = [];
+  private count = 0;
+
+  constructor(private max: number) {}
+
+  acquire(): Promise<void> {
+    if (this.count < this.max) {
+      this.count++;
+      return Promise.resolve();
+    }
+    return new Promise<void>((resolve) => {
+      this.tasks.push(resolve);
+    });
+  }
+
+  release(): void {
+    if (this.tasks.length > 0) {
+      this.tasks.shift()!();
+    } else {
+      this.count--;
+    }
+  }
+}
+
+export async function getAllListedRepoIds(
+  token: string,
+  signal?: AbortSignal,
+): Promise<Set<string>> {
   const repoIds = new Set<string>();
 
   type ListsData = {
@@ -234,7 +290,7 @@ export async function getAllListedRepoIds(token: string): Promise<Set<string>> {
         lists(first: 100) {
           nodes {
             id
-            items(first: ${BATCH_SIZE}) {
+            items(first: ${GRAPHQL_PAGE_SIZE}) {
               nodes { ... on Repository { id } }
               pageInfo { hasNextPage endCursor }
             }
@@ -242,6 +298,8 @@ export async function getAllListedRepoIds(token: string): Promise<Set<string>> {
         }
       }
     }`,
+    undefined,
+    signal,
   );
 
   for (const list of data.viewer.lists.nodes) {
@@ -267,7 +325,7 @@ export async function getAllListedRepoIds(token: string): Promise<Set<string>> {
         `query($listId: ID!, $cursor: String) {
           node(id: $listId) {
             ... on UserList {
-              items(first: ${BATCH_SIZE}, after: $cursor) {
+              items(first: ${GRAPHQL_PAGE_SIZE}, after: $cursor) {
                 nodes { ... on Repository { id } }
                 pageInfo { hasNextPage endCursor }
               }
@@ -275,6 +333,7 @@ export async function getAllListedRepoIds(token: string): Promise<Set<string>> {
           }
         }`,
         { listId: list.id, cursor: itemCursor },
+        signal,
       );
 
       const ip = itemData.node.items;
@@ -308,7 +367,11 @@ export interface BatchCategorizeOptions {
     enableCategoryPrefix?: boolean;
     autoFormat?: boolean;
   };
-  onProgress?: (current: number, repoName: string) => void;
+  onProgress?: (
+    current: number,
+    repoName: string,
+    message?: string,
+  ) => Promise<void> | void;
   signal?: AbortSignal;
 }
 
@@ -322,6 +385,7 @@ export interface BatchCategorizeResult {
 export async function* streamUncategorizedRepos(
   token: string,
   excludeNodeIds?: Set<string>,
+  signal?: AbortSignal,
 ): AsyncGenerator<StarredRepoWithLists, void, unknown> {
   let cursor: string | null = null;
   let hasNextPage = true;
@@ -346,7 +410,7 @@ export async function* streamUncategorizedRepos(
       token,
       `query($cursor: String) {
         viewer {
-          starredRepositories(first: ${BATCH_SIZE}, after: $cursor) {
+          starredRepositories(first: ${GRAPHQL_PAGE_SIZE}, after: $cursor) {
             pageInfo { hasNextPage endCursor }
             nodes {
               id
@@ -359,6 +423,7 @@ export async function* streamUncategorizedRepos(
         }
       }`,
       cursor ? { cursor } : undefined,
+      signal,
     );
 
     const repos = data.viewer.starredRepositories;
@@ -389,91 +454,182 @@ export async function batchCategorize(
 ): Promise<BatchCategorizeResult> {
   const { token, client, settings, onProgress, signal } = options;
 
-  const lists = await getViewerLists(token);
-  const existingNames = lists.map((l) => l.name);
-
-  const listedIds = await getAllListedRepoIds(token);
-
   let categorized = 0;
   let failed = 0;
   const errors: Array<{ repoName: string; error: string }> = [];
 
-  async function processOne(repo: StarredRepoWithLists): Promise<void> {
-    if (signal?.aborted) return;
+  try {
+    await onProgress?.(0, "", "Fetching your lists...");
+    const lists = await getViewerLists(token, signal);
+    const existingNames = lists.map((l) => l.name);
 
-    try {
-      const metadata: import("@/shared/github").RepoMetadata = {
-        description: repo.description,
-        language: repo.language,
-        topics: repo.topics,
-      };
+    const normalizedLists = new Map<string, GitHubList>();
+    for (const list of lists) {
+      normalizedLists.set(normalizeListName(list.name), list);
+    }
 
-      const category = await client.categorize(
-        metadata,
-        repo.owner,
-        repo.repo,
-        existingNames,
-        settings.enableEmojis,
-        settings.enableCategoryPrefix,
-        settings.autoFormat,
-      );
+    const listedIds =
+      lists.length > 0
+        ? await (async () => {
+            await onProgress?.(0, "", "Scanning your starred repositories...");
+            return getAllListedRepoIds(token, signal);
+          })()
+        : new Set<string>();
 
+    const semaphore = new Semaphore(CONCURRENCY_LIMIT);
+
+    async function processRepoMutations(
+      repo: StarredRepoWithLists,
+      category: string,
+    ): Promise<void> {
       let listId: string;
-      const matchedList = fuzzyMatchListName(category, lists);
+      const normName = normalizeListName(category);
+      const matchedList = normalizedLists.get(normName);
+
       if (matchedList) {
         listId = matchedList.id;
       } else {
         const isPrivate = settings.listPrivacy === "private";
-        const newList = await createUserList(category, isPrivate, token);
+        const newList = await createUserList(
+          category,
+          isPrivate,
+          token,
+          signal,
+        );
         lists.push(newList);
         existingNames.push(newList.name);
+        normalizedLists.set(normalizeListName(newList.name), newList);
         listId = newList.id;
       }
 
       if (signal?.aborted) return;
 
-      await updateUserListsForItem(repo.nodeId, [listId], token);
+      await updateUserListsForItem(repo.nodeId, [listId], token, signal);
       categorized++;
-      onProgress?.(categorized, repo.nameWithOwner);
-    } catch (err) {
-      failed++;
-      errors.push({
-        repoName: repo.nameWithOwner,
-        error: err instanceof Error ? err.message : "Unknown error",
-      });
+      await onProgress?.(categorized, repo.nameWithOwner);
     }
-  }
 
-  let batch: StarredRepoWithLists[] = [];
+    async function processChunk(repos: StarredRepoWithLists[]): Promise<void> {
+      if (signal?.aborted) return;
 
-  for await (const repo of streamUncategorizedRepos(token, listedIds)) {
-    if (signal?.aborted) break;
-    batch.push(repo);
-    if (batch.length >= BATCH_SIZE) {
-      for (const r of batch) {
-        if (signal?.aborted) break;
-        await processOne(r);
-        if (signal?.aborted) break;
-        await delay(UPDATE_DELAY_MS);
+      try {
+        const batchRepos = repos.map((r) => ({
+          nameWithOwner: r.nameWithOwner,
+          owner: r.owner,
+          repo: r.repo,
+          metadata: {
+            description: r.description,
+            language: r.language,
+            topics: r.topics,
+          } as import("@/shared/github").RepoMetadata,
+        }));
+
+        await onProgress?.(
+          categorized + failed,
+          repos[0].nameWithOwner,
+          "Analyzing with AI...",
+        );
+
+        const catMap = await client.categorizeBatch(
+          batchRepos,
+          existingNames,
+          settings.enableEmojis,
+          settings.enableCategoryPrefix,
+          settings.autoFormat,
+          undefined,
+          signal,
+        );
+
+        const tasks = repos.map(async (repo) => {
+          if (signal?.aborted) return;
+
+          const category = catMap.get(repo.nameWithOwner);
+          if (!category) {
+            failed++;
+            errors.push({
+              repoName: repo.nameWithOwner,
+              error: "No category returned for repo",
+            });
+            await onProgress?.(categorized + failed, repo.nameWithOwner);
+            return;
+          }
+
+          await semaphore.acquire();
+          try {
+            if (signal?.aborted) return;
+
+            await processRepoMutations(repo, category);
+            await delay(UPDATE_DELAY_MS, signal);
+          } catch (err) {
+            failed++;
+            errors.push({
+              repoName: repo.nameWithOwner,
+              error: err instanceof Error ? err.message : "Unknown error",
+            });
+            await onProgress?.(categorized + failed, repo.nameWithOwner);
+          } finally {
+            semaphore.release();
+          }
+        });
+
+        await Promise.all(tasks);
+      } catch (err) {
+        for (const repo of repos) {
+          failed++;
+          errors.push({
+            repoName: repo.nameWithOwner,
+            error: err instanceof Error ? err.message : "Unknown error",
+          });
+        }
+        await onProgress?.(
+          categorized + failed,
+          repos[repos.length - 1].nameWithOwner,
+        );
       }
-      batch = [];
-      if (signal?.aborted) break;
     }
-  }
 
-  if (!signal?.aborted && batch.length > 0) {
-    for (const r of batch) {
+    let chunk: StarredRepoWithLists[] = [];
+    let repoCount = 0;
+
+    await onProgress?.(0, "", "Looking for uncategorized repositories...");
+
+    for await (const repo of streamUncategorizedRepos(
+      token,
+      listedIds,
+      signal,
+    )) {
       if (signal?.aborted) break;
-      await processOne(r);
-      if (signal?.aborted) break;
-      await delay(UPDATE_DELAY_MS);
+      repoCount++;
+      chunk.push(repo);
+      if (chunk.length >= AI_BATCH_SIZE) {
+        await processChunk(chunk);
+        chunk = [];
+        if (signal?.aborted) break;
+      }
     }
-  }
 
-  return {
-    categorized,
-    failed,
-    cancelled: signal?.aborted ?? false,
-    errors,
-  };
+    if (!signal?.aborted && chunk.length > 0) {
+      await processChunk(chunk);
+    }
+
+    if (repoCount === 0) {
+      await onProgress?.(
+        0,
+        "",
+        "Nothing to categorize — all repositories already have a list",
+      );
+    }
+
+    return {
+      categorized,
+      failed,
+      cancelled: signal?.aborted ?? false,
+      errors,
+    };
+  } catch (err) {
+    if (err instanceof Error && err.name === "AbortError") {
+      return { categorized, failed, cancelled: true, errors };
+    }
+    throw err;
+  }
 }

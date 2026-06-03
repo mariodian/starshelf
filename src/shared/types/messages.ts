@@ -42,7 +42,7 @@ export interface UpdateStarStatusMessage {
 
 export type BatchStatus =
   | { state: "idle" }
-  | { state: "running"; current: number; currentRepo: string }
+  | { state: "running"; current: number; currentRepo: string; message?: string }
   | {
       state: "done";
       categorized: number;

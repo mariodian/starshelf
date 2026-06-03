@@ -518,7 +518,7 @@ let batchAbortController: AbortController | null = null;
 async function handleStartBatch(): Promise<
   { alreadyRunning: true } | { error: string } | null
 > {
-  const current = await browser.storage.local
+  const current = await browser.storage.session
     .get("batchStatus")
     .then((r) => r.batchStatus as BatchStatus | undefined);
   if (current?.state === "running") {
@@ -563,13 +563,14 @@ async function handleStartBatch(): Promise<
         autoFormat: settings.autoFormat,
       },
       signal,
-      onProgress: (current, repoName) => {
+      onProgress: async (current, repoName, message) => {
         const status: BatchStatus = {
           state: "running",
           current,
           currentRepo: repoName,
+          message,
         };
-        updateBatchStatus(status);
+        await updateBatchStatus(status);
       },
     });
 
@@ -614,7 +615,7 @@ async function handleCancelBatch(): Promise<
 }
 
 async function updateBatchStatus(status: BatchStatus): Promise<void> {
-  await browser.storage.local.set({ batchStatus: status });
+  await browser.storage.session.set({ batchStatus: status });
   try {
     await browser.runtime.sendMessage({
       type: "batchProgress",
