@@ -28,7 +28,6 @@ Load the `dist/` folder as an unpacked extension in `chrome://extensions`.
 - ⚡ [Quick Start](#-quick-start)
 - 🤔 [Why Starshelf?](#-why-starshelf)
 - ✨ [Features](#-features)
-- 🏗️ [Architecture](#️-architecture)
 - 📥 [Installation](#-installation)
 - 🚀 [Usage](#-usage)
 - 🔑 [Permissions](#-permissions)
@@ -64,46 +63,12 @@ GitHub stars pile up fast. Before you know it you have hundreds of repos and no 
 ## ✨ Features
 
 - **Star-and-forget**: detects star clicks on GitHub and categorizes repos automatically
+- **Batch categorize**: classify all starred repos at once with session-backed progress tracking
 - **Multi-provider AI**: Anthropic, OpenAI, or OpenCode — bring your own API key
 - **Instant overlay**: category label appears on the page right after starring
-- **Unstar cleanup**: removing a star also removes the stored categorization
+- **Regenerate categories**: re-categorize already-assigned repos without clearing existing assignments
+- **Emoji & formatting**: toggle emoji prefixes, category-prefix labels, and auto-detect existing list naming conventions
 - **Lightweight**: no bundler bloat, no framework — vanilla TypeScript + WXT
-
-## 🏗️ Architecture
-
-```
-entrypoints/
-  background.ts    → Service worker: secrets, API calls, settings, logic
-  content.ts       → Content script: star-button detection, status overlay
-  popup/           → Settings popup: providers, API keys, models
-shared/
-  types/messages.ts   → Typed content↔background message protocol
-  storage.ts          → Extension storage abstraction (encryption-ready)
-  github.ts           → URL parser, repo metadata, star verification
-  categorizer.ts      → Orchestrates AI categorization
-  providers/
-    base.ts           → AiProviderClient interface
-    anthropic.ts      → Anthropic Messages API
-    openai.ts         → OpenAI Chat Completions + model listing
-    opencode.ts       → OpenCode Zen / Go (OpenAI-compatible)
-```
-
-### Flow
-
-1. User clicks **Star** on a GitHub repo page
-2. **Content script** detects the click and sends `repoStarClicked` to the background worker
-3. **Background** verifies the sender tab, fetches repo metadata (optionally via GitHub API), calls the selected AI provider for categorization, and stores the result
-4. **Background** sends `updateStarStatus` back to the content script
-5. **Content script** shows a temporary overlay ("Shelving…", category name, or error)
-6. Unstarring removes the stored categorization
-
-### Providers
-
-| Provider  | API                       | Model selection                  | Model listing |
-| --------- | ------------------------- | -------------------------------- | ------------- |
-| Anthropic | Messages API              | Manual entry                     | —             |
-| OpenAI    | Chat Completions          | Manual + fetch from `/v1/models` | Yes           |
-| OpenCode  | Chat Completions (Zen/Go) | Manual entry (`provider/model`)  | —             |
 
 ## 📥 Installation
 
@@ -123,11 +88,8 @@ bun install
 ## 🚀 Usage
 
 ```bash
-# Dev with hot reload (persistent Chrome profile)
+# Dev with hot reload
 bun run dev
-
-# Type-check
-bun run compile
 
 # Production build
 bun run build
@@ -138,32 +100,21 @@ bun run zip
 
 Load the `dist/` folder as an unpacked extension in `chrome://extensions`.
 
-### Persistent Dev Profile
-
-`bun run dev` uses a persistent Chromium profile stored in `.wxt/chrome-data/`. Combined with the fixed extension `key` in the manifest (dev only), this means:
-
-- **Stable extension ID** — A hardcoded RSA key is embedded in `wxt.config.ts` so Chrome computes the same extension ID every time. Set `WXT_DEV_EXTENSION_KEY` to override the built-in default.
-- **Pinned extension** — Once you pin the extension or install devtools extensions, they stay pinned/installed across dev sessions.
-- **Settings & logins persist** — `keepProfileChanges: true` tells WXT not to discard the profile after each run, so browser settings and logins survive restarts.
-- **Auto-open GitHub** — GitHub opens automatically in a new tab when the dev browser starts (`startUrls`).
-
-This is dev-only (`webExt` config is ignored by `wxt build`) and does not affect production builds.
-
-The `.wxt/` directory is gitignored, so the profile is local to your machine.
-
-> **Note:** If you previously ran `bun run dev` without a stable extension key, Chrome will see the extension as new on the next start. Pin it once to the toolbar — it will survive all subsequent restarts.
+For a full list of commands (Firefox builds, testing, formatting), see [CONTRIBUTING.md](./CONTRIBUTING.md).
 
 ## 🔑 Permissions
 
-| Permission             | Why                                  |
-| ---------------------- | ------------------------------------ |
-| `storage`              | Persist settings and categorizations |
-| `activeTab`            | Verify sender tab context            |
-| `https://github.com/*` | Content script injection             |
+| Permission                                                           | Why                                       |
+| -------------------------------------------------------------------- | ----------------------------------------- |
+| `storage`                                                            | Persist settings and categorizations      |
+| `activeTab`                                                          | Verify sender tab context                 |
+| `https://github.com/*`                                               | Content script injection + repo detection |
+| `https://api.github.com/*`                                           | GitHub API: lists, starring, repo lookups |
+| `https://api.anthropic.com/*` / `api.openai.com/*` / `opencode.ai/*` | AI provider API calls                     |
 
 ## ⚠️ Known Limitations
 
-- **Chrome-only**: the extension targets Chromium-based browsers; Firefox support is planned but not yet tested
+- **Chromium-first**: the extension is primarily developed and tested on Chromium-based browsers (Chrome, Edge, Brave, Arc); Firefox support is available but less tested
 - **API key required**: Starshelf does not bundle AI access — you must bring your own API key from a supported provider
 - **GitHub-only**: only `github.com` repos are supported; GitHub Enterprise and self-hosted instances are not detected
 - **Popup configuration**: initial setup requires opening the extension popup to enter credentials before categorization works
@@ -181,10 +132,6 @@ Open the extension popup and verify your API key is set and the provider is sele
 ### Overlay doesn't show on GitHub
 
 Confirm the extension has permission to run on `https://github.com/*`. If you installed the extension after opening GitHub, refresh the page.
-
-### Dev profile reset
-
-If the persistent Chrome profile gets corrupted, delete `.wxt/chrome-data/` and restart `bun run dev`. Your extension settings will be lost, but the source code is unaffected.
 
 ## ❤️ Like This Project?
 

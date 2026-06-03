@@ -5,6 +5,7 @@ For full technical details, see [CHANGELOG.md](./CHANGELOG.md).
 
 | Version                             | Date       | Summary                                          |
 | ----------------------------------- | ---------- | ------------------------------------------------ |
+| [v0.1.0](./release-notes/v0.1.0.md) | 2026-06-03 | Batch categorize all starred repos at once       |
 | [v0.0.4](./release-notes/v0.0.4.md) | 2026-06-02 | Regenerate categories and internal refactoring   |
 | [v0.0.3](./release-notes/v0.0.3.md) | 2026-05-29 | Fix Chrome Webstore extension key configuration  |
 | [v0.0.2](./release-notes/v0.0.2.md) | 2026-05-29 | Emoji and formatting options for star list names |

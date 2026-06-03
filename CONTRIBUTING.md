@@ -70,22 +70,47 @@ Load the `dist/` folder as an unpacked extension in `chrome://extensions`.
 
 Starshelf is a browser extension built with [WXT](https://wxt.dev). It has three main entry points:
 
-- **Background** (`src/entrypoints/background.ts`) — Service worker handling secrets, API calls, settings, and categorization logic.
-- **Content** (`src/entrypoints/content.ts`) — Content script that detects star-button clicks on GitHub and displays status overlays.
-- **Popup** (`src/entrypoints/popup/`) — Settings UI for configuring AI providers, API keys, and models.
+```
+entrypoints/
+  background.ts    → Service worker: secrets, API calls, settings, logic
+  content.ts       → Content script: star-button detection, status overlay
+  popup/           → Settings popup: providers, API keys, models, batch UI
+```
 
 Shared modules live in `src/shared/`:
 
-| Module                   | Purpose                                      |
-| ------------------------ | -------------------------------------------- |
-| `types/messages.ts`      | Typed content ↔ background message protocol  |
-| `storage.ts`             | Extension storage abstraction                |
-| `github.ts`              | URL parser, repo metadata, star verification |
-| `categorizer.ts`         | Orchestrates AI categorization               |
-| `providers/base.ts`      | `AiProviderClient` interface                 |
-| `providers/anthropic.ts` | Anthropic Messages API                       |
-| `providers/openai.ts`    | OpenAI Chat Completions + model listing      |
-| `providers/opencode.ts`  | OpenCode Zen / Go (OpenAI-compatible)        |
+| Module                   | Purpose                                               |
+| ------------------------ | ----------------------------------------------------- |
+| `types/messages.ts`      | Typed content ↔ background message protocol           |
+| `storage.ts`             | Extension storage abstraction                         |
+| `github.ts`              | URL parser, repo metadata, star verification          |
+| `github-lists.ts`        | GitHub GraphQL API: lists, starring, batch operations |
+| `logger.ts`              | Dev-only console logging                              |
+| `settings.ts`            | Popup settings page logic                             |
+| `dev-bootstrap.ts`       | Seed settings from env vars in development            |
+| `overlay.css`            | Content script overlay styles                         |
+| `providers/base.ts`      | `AiProviderClient` interface                          |
+| `providers/factory.ts`   | Provider client factory                               |
+| `providers/anthropic.ts` | Anthropic Messages API                                |
+| `providers/openai.ts`    | OpenAI Chat Completions + model listing               |
+| `providers/opencode.ts`  | OpenCode Zen / Go (OpenAI-compatible)                 |
+
+### Flow
+
+1. User clicks **Star** on a GitHub repo page
+2. **Content script** detects the click and sends `repoStarClicked` to the background worker
+3. **Background** verifies the sender tab, fetches repo metadata (optionally via GitHub API), calls the selected AI provider for categorization, and stores the result
+4. **Background** sends `updateStarStatus` back to the content script
+5. **Content script** shows a temporary overlay ("Shelving…", category name, or error)
+6. Unstarring removes the stored categorization
+
+### Providers
+
+| Provider  | API                       | Model selection                  | Model listing |
+| --------- | ------------------------- | -------------------------------- | ------------- |
+| Anthropic | Messages API              | Manual entry                     | —             |
+| OpenAI    | Chat Completions          | Manual + fetch from `/v1/models` | Yes           |
+| OpenCode  | Chat Completions (Zen/Go) | Manual entry (`provider/model`)  | —             |
 
 ### Development Notes
 
@@ -95,6 +120,21 @@ Shared modules live in `src/shared/`:
 - `bun install` automatically runs `wxt prepare` (via `postinstall`) to set up WXT type stubs.
 - The extension communicates between content scripts and the background service worker via typed messages defined in `src/shared/types/messages.ts`.
 - API keys are stored in extension storage (accessed via the background service worker only).
+
+### Persistent Dev Profile
+
+`bun run dev` uses a persistent Chromium profile stored in `.wxt/chrome-data/`. Combined with the fixed extension `key` in the manifest (dev only), this means:
+
+- **Stable extension ID** — A hardcoded RSA key is embedded in `wxt.config.ts` so Chrome computes the same extension ID every time. Set `WXT_DEV_EXTENSION_KEY` to override the built-in default.
+- **Pinned extension** — Once you pin the extension or install devtools extensions, they stay pinned/installed across dev sessions.
+- **Settings & logins persist** — `keepProfileChanges: true` tells WXT not to discard the profile after each run, so browser settings and logins survive restarts.
+- **Auto-open GitHub** — GitHub opens automatically in a new tab when the dev browser starts (`startUrls`).
+
+This is dev-only (`webExt` config is ignored by `wxt build`) and does not affect production builds.
+
+The `.wxt/` directory is gitignored, so the profile is local to your machine.
+
+> **Note:** If you previously ran `bun run dev` without a stable extension key, Chrome will see the extension as new on the next start. Pin it once to the toolbar — it will survive all subsequent restarts.
 
 ## Code Style
 

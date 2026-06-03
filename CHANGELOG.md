@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.1.0] - 2026-06-03
+
+### Added
+
+- **Batch categorization** to classify all starred repositories in a single operation, with session-backed progress tracking in the popup
+- **GraphQL dispatcher** test utility for mocking GraphQL API responses
+
+### Changed
+
+- Batch status storage moved from local to **session** storage for better isolation
+- Batch categorize UI relocated to a dedicated section in the popup
+- Fetch mock utilities refactored for reuse across test suites
+
+### Fixed
+
+- Concurrency and update delay throttling in **GitHub lists** operations for more reliable bulk updates
+
 ## [v0.0.4] - 2026-06-02
 
 ### Added
