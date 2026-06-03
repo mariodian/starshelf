@@ -2,8 +2,8 @@ const GITHUB_GRAPHQL_URL = "https://api.github.com/graphql";
 
 export const GRAPHQL_PAGE_SIZE = 100;
 export const AI_BATCH_SIZE = 10;
-export const CONCURRENCY_LIMIT = 5;
-export const UPDATE_DELAY_MS = 200;
+export const CONCURRENCY_LIMIT = 10;
+export const UPDATE_DELAY_MS = 50;
 
 export interface GitHubList {
   id: string;
@@ -302,47 +302,59 @@ export async function getAllListedRepoIds(
     signal,
   );
 
+  type ItemPageData = {
+    node: {
+      items: {
+        nodes: Array<{ id: string } | null>;
+        pageInfo: { hasNextPage: boolean; endCursor: string | null };
+      };
+    };
+  };
+
   for (const list of data.viewer.lists.nodes) {
     for (const node of list.items.nodes) {
       if (node) repoIds.add(node.id);
     }
+  }
 
-    let itemCursor = list.items.pageInfo.endCursor;
-    let hasMoreItems = list.items.pageInfo.hasNextPage;
+  let paginating = data.viewer.lists.nodes
+    .filter((l) => l.items.pageInfo.hasNextPage)
+    .map((l) => ({ id: l.id, cursor: l.items.pageInfo.endCursor! }));
 
-    while (hasMoreItems) {
-      type ItemPageData = {
-        node: {
-          items: {
-            nodes: Array<{ id: string } | null>;
-            pageInfo: { hasNextPage: boolean; endCursor: string | null };
-          };
-        };
-      };
+  while (paginating.length > 0) {
+    if (signal?.aborted) break;
 
-      const itemData = await graphqlRequest<ItemPageData>(
-        token,
-        `query($listId: ID!, $cursor: String) {
-          node(id: $listId) {
-            ... on UserList {
-              items(first: ${GRAPHQL_PAGE_SIZE}, after: $cursor) {
-                nodes { ... on Repository { id } }
-                pageInfo { hasNextPage endCursor }
+    const results = await Promise.all(
+      paginating.map(({ id, cursor }) =>
+        graphqlRequest<ItemPageData>(
+          token,
+          `query($listId: ID!, $cursor: String) {
+            node(id: $listId) {
+              ... on UserList {
+                items(first: ${GRAPHQL_PAGE_SIZE}, after: $cursor) {
+                  nodes { ... on Repository { id } }
+                  pageInfo { hasNextPage endCursor }
+                }
               }
             }
-          }
-        }`,
-        { listId: list.id, cursor: itemCursor },
-        signal,
-      );
+          }`,
+          { listId: id, cursor },
+          signal,
+        ),
+      ),
+    );
 
-      const ip = itemData.node.items;
+    const next: typeof paginating = [];
+    for (let i = 0; i < results.length; i++) {
+      const ip = results[i].node.items;
       for (const node of ip.nodes) {
         if (node) repoIds.add(node.id);
       }
-      hasMoreItems = ip.pageInfo.hasNextPage;
-      itemCursor = ip.pageInfo.endCursor;
+      if (ip.pageInfo.hasNextPage && ip.pageInfo.endCursor) {
+        next.push({ id: paginating[i].id, cursor: ip.pageInfo.endCursor });
+      }
     }
+    paginating = next;
   }
 
   return repoIds;
