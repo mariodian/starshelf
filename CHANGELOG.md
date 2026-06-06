@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.1.1] - 2026-06-06
+
+### Added
+
+- **Firefox** extension support with dedicated build (`build:firefox`), zip (`zip:firefox`), and dev scripts, plus browser-specific settings including a `gecko` manifest key
+- Separate **Firefox dev profile** directory for persistent development sessions
+
+### Changed
+
+- CI release workflow simplified to a **single job** that builds and packages both Chrome and Firefox extensions together
+- Removed unused **`activeTab`** permission; only `storage` is required
+
 ## [v0.1.0] - 2026-06-03
 
 ### Added
