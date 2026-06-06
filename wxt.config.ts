@@ -31,8 +31,9 @@ export default defineConfig({
     version: pkg.version,
     // Fixed key in dev ensures the extension ID stays stable across reloads,
     // so Chrome keeps the extension pinned between dev sessions.
-    // Set WXT_DEV_EXTENSION_KEY env var to override the built-in default.
-    key: isDev ? process.env.WXT_DEV_EXTENSION_KEY : CHROME_WEBSTORE_KEY,
+    key: isDev
+      ? process.env.WXT_DEV_EXTENSION_KEY || CHROME_WEBSTORE_KEY
+      : undefined,
     permissions: ["storage"],
     host_permissions: [
       "https://github.com/*",
