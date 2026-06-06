@@ -24,6 +24,21 @@ function reponame(owner: string, repo: string) {
   return `${owner}/${repo}`;
 }
 
+function h(
+  tag: string,
+  attrs: Record<string, string>,
+  ...children: (string | HTMLElement)[]
+): HTMLElement {
+  const el = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
+  for (const child of children) {
+    el.append(
+      typeof child === "string" ? document.createTextNode(child) : child,
+    );
+  }
+  return el;
+}
+
 export default defineContentScript({
   matches: ["https://github.com/*"],
   main() {
@@ -240,12 +255,16 @@ function showOverlay(payload: UpdateStarStatusMessage["payload"]) {
   switch (status) {
     case "categorizing":
       refreshBtn.style.display = "none";
-      overlay.innerHTML = `
-<div style="white-space: nowrap; display: flex; align-items: center; gap: 6px;">
-  <span id="starshelf-spinner"></span>
-  <span id="starshelf-text">Shelving...</span>
-</div>
-`;
+      overlay.replaceChildren(
+        h(
+          "div",
+          {
+            style: "white-space:nowrap;display:flex;align-items:center;gap:6px",
+          },
+          h("span", { id: "starshelf-spinner" }),
+          h("span", { id: "starshelf-text" }, "Shelving..."),
+        ),
+      );
       overlay.style.color = "var(--starshelf-link)";
       overlay.style.opacity = "1";
       break;
@@ -255,11 +274,17 @@ function showOverlay(payload: UpdateStarStatusMessage["payload"]) {
       refreshBtn.dataset.owner = payload.owner;
       refreshBtn.dataset.repo = payload.repo;
       refreshBtn.dataset.category = category || "";
-      overlay.innerHTML = `
-<div style="white-space: nowrap; display: flex; align-items: center;">
-  <span id="starshelf-saved-text">${category || "Added to list"}</span>
-</div>
-`;
+      overlay.replaceChildren(
+        h(
+          "div",
+          { style: "white-space:nowrap;display:flex;align-items:center" },
+          h(
+            "span",
+            { id: "starshelf-saved-text" },
+            category || "Added to list",
+          ),
+        ),
+      );
       overlay.style.color = "var(--starshelf-link)";
       overlay.style.opacity = "1";
       startFadeTimer(TIMEOUTS.saved);
