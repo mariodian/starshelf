@@ -9,32 +9,23 @@ permissions:
   contents: read
 
 jobs:
-  build:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: latest
-      - run: bun install
-      - run: bun run zip
-      - uses: actions/upload-artifact@v4
-        with:
-          name: extension-zips
-          path: dist/*.zip
-
   release:
-    needs: build
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/download-artifact@v4
+      - uses: oven-sh/setup-bun@v2
         with:
-          name: extension-zips
-          path: dist
+          bun-version: latest
+
+      - run: bun install
+
+      - name: Zip extensions
+        run: |
+          bun run zip
+          bun run zip:firefox
 
       - name: Extract version from tag
         id: version
