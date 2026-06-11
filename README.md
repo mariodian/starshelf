@@ -6,10 +6,11 @@ Auto-categorize GitHub starred repos with AI.<br />Pick a provider, set your key
 
 [Changelog](./CHANGELOG.md) · [Report Bug](https://github.com/mariodian/starshelf/issues/new?template=bug-report.md) · [Request Feature](https://github.com/mariodian/starshelf/issues/new?template=feature-request.md)
 
-![Status](https://img.shields.io/badge/status-alpha-red)
-![Version](https://img.shields.io/github/v/release/mariodian/starshelf)
-![Platform](https://img.shields.io/badge/platform-Chrome-brightgreen)
-![License](https://img.shields.io/badge/license-MIT-green)
+[![Build](https://img.shields.io/github/actions/workflow/status/mariodian/starshelf/ci.yml)](https://github.com/mariodian/starshelf/actions)
+[![Version](https://img.shields.io/github/v/release/mariodian/starshelf)](https://github.com/mariodian/starshelf/releases)
+[![License](https://img.shields.io/badge/license-MIT-green)](./LICENSE)
+[![Chrome Web Store](https://img.shields.io/badge/Chrome_Web_Store-download-blue?logo=googlechrome&logoColor=white)](https://chromewebstore.google.com/detail/starshelf/cofjbnkmfcpmpdlonjookehnpncaalpj)
+[![Firefox Add-on](https://img.shields.io/badge/Firefox_Addon-download-orange?logo=firefoxbrowser&logoColor=white)](https://addons.mozilla.org/en-US/firefox/addon/starshelf/)
 
 </div>
 
@@ -71,6 +72,9 @@ GitHub stars pile up fast. Before you know it you have hundreds of repos and no 
 - **Lightweight**: no bundler bloat, no framework — vanilla TypeScript + WXT
 
 ## 📥 Installation
+
+[![Chrome Web Store](https://img.shields.io/badge/Chrome_Web_Store-Install-4285F4?logo=googlechrome&logoColor=white&style=for-the-badge)](https://chromewebstore.google.com/detail/starshelf/cofjbnkmfcpmpdlonjookehnpncaalpj)
+[![Firefox Add-on](https://img.shields.io/badge/Firefox_Addon-Install-FF7139?logo=firefoxbrowser&logoColor=white&style=for-the-badge)](https://addons.mozilla.org/en-US/firefox/addon/starshelf/)
 
 ### From source
 
