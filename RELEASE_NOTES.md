@@ -5,6 +5,7 @@ For full technical details, see [CHANGELOG.md](./CHANGELOG.md).
 
 | Version                             | Date       | Summary                                          |
 | ----------------------------------- | ---------- | ------------------------------------------------ |
+| [v0.1.2](./release-notes/v0.1.2.md) | 2026-06-17 | Search, tabbed popup, and category sync          |
 | [v0.1.1](./release-notes/v0.1.1.md) | 2026-06-06 | Firefox support and streamlined CI releases      |
 | [v0.1.0](./release-notes/v0.1.0.md) | 2026-06-03 | Batch categorize all starred repos at once       |
 | [v0.0.4](./release-notes/v0.0.4.md) | 2026-06-02 | Regenerate categories and internal refactoring   |

@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v0.1.2] - 2026-06-17
+
+### Added
+
+- **Search** functionality to filter and find starred repositories by name, description, or language directly in the popup
+- **Tabbed popup** interface separating categorize, search, and settings into dedicated tabs for easier navigation
+- **List category sync** to push local category assignments back to GitHub star lists, keeping both in sync
+
+### Fixed
+
+- Corrected **key assignment logic** in extension configuration
+
 ## [v0.1.1] - 2026-06-06
 
 ### Added
