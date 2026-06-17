@@ -56,7 +56,10 @@ GitHub stars pile up fast. Before you know it you have hundreds of repos and no 
       <a href="media/screenshots/screen-3.webp"><img src="./media/screenshots/screen-3.webp" alt="Shelving into the right category" width="100%"></a>
     </td>
     <td width="25%" align="center" valign="middle">
-      <a href="media/screenshots/screen-4.webp"><img src="./media/screenshots/screen-4.webp" alt="Your stars, finally organized" width="100%"></a>
+      <a href="media/screenshots/screen-4.webp"><img src="./media/screenshots/screen-4.webp" alt="Search your stars" width="100%"></a>
+    </td>
+    <td width="25%" align="center" valign="middle">
+      <a href="media/screenshots/screen-5.webp"><img src="./media/screenshots/screen-5.webp" alt="Your stars, finally organized" width="100%"></a>
     </td>
   </tr>
 </table>
@@ -65,6 +68,7 @@ GitHub stars pile up fast. Before you know it you have hundreds of repos and no 
 
 - **Star-and-forget**: detects star clicks on GitHub and categorizes repos automatically
 - **Batch categorize**: classify all starred repos at once with session-backed progress tracking
+- **Search your stars**: filter and find starred repositories by name, description, or language
 - **Multi-provider AI**: Anthropic, OpenAI, or OpenCode — bring your own API key
 - **Instant overlay**: category label appears on the page right after starring
 - **Regenerate categories**: re-categorize already-assigned repos without clearing existing assignments
@@ -87,7 +91,7 @@ bun install
 ### ✅ Requirements
 
 - [Bun](https://bun.sh) v1.0+
-- Chromium-based browser (Chrome, Edge, Brave, Arc, etc.)
+- Chromium-based browser (Chrome, Edge, Brave, Arc, etc.) or Firefox
 
 ## 🚀 Usage
 
@@ -111,7 +115,6 @@ For a full list of commands (Firefox builds, testing, formatting), see [CONTRIBU
 | Permission                                                           | Why                                       |
 | -------------------------------------------------------------------- | ----------------------------------------- |
 | `storage`                                                            | Persist settings and categorizations      |
-| `activeTab`                                                          | Verify sender tab context                 |
 | `https://github.com/*`                                               | Content script injection + repo detection |
 | `https://api.github.com/*`                                           | GitHub API: lists, starring, repo lookups |
 | `https://api.anthropic.com/*` / `api.openai.com/*` / `opencode.ai/*` | AI provider API calls                     |
