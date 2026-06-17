@@ -12,12 +12,16 @@
     "build:firefox": "wxt build -b firefox",
     "zip": "wxt zip",
     "zip:firefox": "wxt zip -b firefox",
+    "zip:all": "wxt zip && wxt zip -b firefox",
     "check": "bun run format:check && bun run compile && bun run test",
     "format": "bunx prettier --write '**/*.{ts,css,html}'",
     "format:check": "bunx prettier --check '**/*.{ts,css,html}'",
     "test": "vitest run",
     "compile": "tsc --noEmit",
-    "postinstall": "wxt prepare"
+    "postinstall": "wxt prepare",
+    "submit": "wxt submit --chrome-zip dist/*-chrome.zip --firefox-zip dist/*-firefox.zip --firefox-sources-zip dist/*-sources.zip",
+    "submit:dry-run": "rm -rf dist/*.zip && bun run zip:all && bun run submit --dry-run",
+    "submit:hot": "rm -rf dist/*.zip && bun run zip:all && bun run submit"
   },
   "devDependencies": {
     "typescript": "^5.9.3",
