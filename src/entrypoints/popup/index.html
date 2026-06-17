@@ -3,155 +3,18 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Starshelf Configuration</title>
+    <title>Starshelf</title>
     <link rel="stylesheet" href="./style.css" />
   </head>
   <body>
-    <div class="container">
-      <h1 class="header">
-        <img src="./logo.png" width="32" height="32" alt="Starshelf" />
-        <span>Starshelf</span>
-      </h1>
+    <header class="app-header">
+      <img src="./logo.png" width="24" height="24" alt="" />
+      <span>Starshelf</span>
+    </header>
 
-      <section id="searchSection">
-        <h2>Search Starred Repos</h2>
-        <div id="searchDisabledState">
-          <p>Search is disabled because no repo metadata is stored locally.</p>
-          <div class="field">
-            <button id="fullSyncBtn">Full Sync from GitHub</button>
-            <button id="cancelSync" class="danger" style="display: none">
-              Cancel
-            </button>
-          </div>
-          <p id="syncStatus" class="hint">Ready</p>
-          <p class="hint">Or star any repo to enable search instantly.</p>
-        </div>
-        <div id="searchEnabledState" style="display: none">
-          <input
-            type="search"
-            id="searchInput"
-            placeholder="Find a starred repo…"
-            autocomplete="off"
-          />
-          <div id="searchResults"></div>
-        </div>
-      </section>
+    <main id="tabContent"></main>
 
-      <section>
-        <h2>GitHub Token</h2>
-        <p>
-          Create a
-          <a href="https://github.com/settings/tokens/new" target="_blank"
-            >classic personal access token</a
-          >
-          with the <code>user</code>, <code>public_repo</code> and
-          <code>gist</code> scope.
-        </p>
-        <div class="field">
-          <input
-            type="password"
-            id="githubToken"
-            placeholder="ghp_..."
-            autocomplete="off"
-          />
-          <button id="deleteGithubToken" class="danger">Delete</button>
-        </div>
-        <p class="hint">
-          Only classic tokens work. Fine-grained PATs lack the required
-          star-list API access.
-        </p>
-      </section>
-
-      <section>
-        <h2>AI Provider</h2>
-        <div class="field">
-          <select id="aiProvider">
-            <option value="anthropic">Anthropic</option>
-            <option value="openai">OpenAI</option>
-            <option value="opencode">OpenCode</option>
-          </select>
-        </div>
-      </section>
-
-      <section id="providerSettings">
-        <h2>Provider Settings</h2>
-
-        <div class="field">
-          <label for="apiKey">API Key</label>
-          <input type="password" id="apiKey" autocomplete="off" />
-          <button id="deleteApiKey" class="danger">Delete Key</button>
-        </div>
-
-        <div class="field" id="openCodeEndpointField" style="display: none">
-          <label for="openCodeEndpoint">Endpoint</label>
-          <select id="openCodeEndpoint">
-            <option value="zen">Zen</option>
-            <option value="zen-go">Go</option>
-          </select>
-        </div>
-
-        <div class="field">
-          <label for="modelSelect">Model</label>
-          <select id="modelSelect"></select>
-          <button id="fetchModels">Fetch</button>
-        </div>
-        <p class="hint">
-          Using a cheaper model will reduce costs, but may result in less
-          accurate suggestions.
-        </p>
-      </section>
-
-      <section>
-        <h2>List Privacy</h2>
-        <div class="field">
-          <label for="listPrivacy">New lists</label>
-          <select id="listPrivacy">
-            <option value="private">Private</option>
-            <option value="public">Public</option>
-          </select>
-        </div>
-        <p class="hint">
-          Private lists are only visible to you, while public lists can be seen
-          by anyone. You can change the privacy of each list later on GitHub.
-        </p>
-      </section>
-
-      <section>
-        <h2>Formatting</h2>
-        <div class="field">
-          <input type="checkbox" id="autoFormat" />
-          <label for="autoFormat">Auto-format</label>
-        </div>
-        <p class="hint">
-          When enabled, Starshelf auto-detects and follows your existing naming
-          conventions (emojis and category prefixes). Disable to force your
-          preferred style regardless of past list names.
-        </p>
-        <div class="field separate">
-          <input type="checkbox" id="enableEmojis" />
-          <label for="enableEmojis">Enable emojis</label>
-        </div>
-        <div class="field">
-          <input type="checkbox" id="enableCategoryPrefix" />
-          <label for="enableCategoryPrefix">Enable category prefix</label>
-        </div>
-      </section>
-
-      <section>
-        <h2>Batch Categorize</h2>
-        <p>
-          Categorize all uncategorized starred repos into Star Lists. The
-          process runs in the background so you can close this popup.
-        </p>
-        <div class="field">
-          <button id="startBatch">Start</button>
-          <button id="cancelBatch" class="danger" style="display: none">
-            Cancel
-          </button>
-        </div>
-        <p id="batchStatus" class="hint">Ready</p>
-      </section>
-    </div>
+    <nav id="tabNav"></nav>
 
     <script type="module" src="./main.ts"></script>
   </body>

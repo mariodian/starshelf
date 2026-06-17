@@ -1,13 +1,121 @@
 import { storage } from "@/shared/storage";
 import type { ExtensionSettings } from "@/shared/storage";
 import { createProviderClient } from "@/shared/providers/factory";
+import { h } from "./shared";
 
 let settings: ExtensionSettings;
 const DIRTY_MASK = "\u2022".repeat(12);
 let isRendering = false;
 const debounceTimers = new Map<string, ReturnType<typeof setTimeout>>();
+let root: HTMLElement | null = null;
 
-export async function initSettingsPage() {
+export function renderSettingsTab(): HTMLElement {
+  root = h("div", { id: "settingsTab" });
+  root.innerHTML = `
+    <section>
+      <h2>GitHub Token</h2>
+      <p>
+        Create a
+        <a href="https://github.com/settings/tokens/new" target="_blank"
+          >classic personal access token</a
+        >
+        with the <code>user</code>, <code>public_repo</code> and
+        <code>gist</code> scope.
+      </p>
+      <div class="field">
+        <input
+          type="password"
+          id="githubToken"
+          placeholder="ghp_..."
+          autocomplete="off"
+        />
+        <button id="deleteGithubToken" class="danger">Delete</button>
+      </div>
+      <p class="hint">
+        Only classic tokens work. Fine-grained PATs lack the required
+        star-list API access.
+      </p>
+    </section>
+
+    <section>
+      <h2>AI Provider</h2>
+      <div class="field">
+        <select id="aiProvider">
+          <option value="anthropic">Anthropic</option>
+          <option value="openai">OpenAI</option>
+          <option value="opencode">OpenCode</option>
+        </select>
+      </div>
+    </section>
+
+    <section id="providerSettings">
+      <h2>Provider Settings</h2>
+
+      <div class="field">
+        <label for="apiKey">API Key</label>
+        <input type="password" id="apiKey" autocomplete="off" />
+        <button id="deleteApiKey" class="danger">Delete Key</button>
+      </div>
+
+      <div class="field" id="openCodeEndpointField" style="display: none">
+        <label for="openCodeEndpoint">Endpoint</label>
+        <select id="openCodeEndpoint">
+          <option value="zen">Zen</option>
+          <option value="zen-go">Go</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label for="modelSelect">Model</label>
+        <select id="modelSelect"></select>
+        <button id="fetchModels">Fetch</button>
+      </div>
+      <p class="hint">
+        Using a cheaper model will reduce costs, but may result in less
+        accurate suggestions.
+      </p>
+    </section>
+
+    <section>
+      <h2>List Privacy</h2>
+      <div class="field">
+        <label for="listPrivacy">New lists</label>
+        <select id="listPrivacy">
+          <option value="private">Private</option>
+          <option value="public">Public</option>
+        </select>
+      </div>
+      <p class="hint">
+        Private lists are only visible to you, while public lists can be seen
+        by anyone. You can change the privacy of each list later on GitHub.
+      </p>
+    </section>
+
+    <section>
+      <h2>Formatting</h2>
+      <div class="field">
+        <input type="checkbox" id="autoFormat" />
+        <label for="autoFormat">Auto-format</label>
+      </div>
+      <p class="hint">
+        When enabled, Starshelf auto-detects and follows your existing naming
+        conventions (emojis and category prefixes). Disable to force your
+        preferred style regardless of past list names.
+      </p>
+      <div class="field separate">
+        <input type="checkbox" id="enableEmojis" />
+        <label for="enableEmojis">Enable emojis</label>
+      </div>
+      <div class="field">
+        <input type="checkbox" id="enableCategoryPrefix" />
+        <label for="enableCategoryPrefix">Enable category prefix</label>
+      </div>
+    </section>
+  `;
+  return root;
+}
+
+export async function initSettingsTab(): Promise<void> {
   settings = await storage.getSettings();
   render();
   wire();
@@ -307,35 +415,29 @@ function flash(msg: string, isError = false) {
   }, 2500);
 }
 
-let _elCache: ReturnType<typeof queryElements> | null = null;
-
 function getElements() {
-  if (!_elCache) _elCache = queryElements();
-  return _elCache;
-}
-
-function queryElements() {
+  const container = root ?? document;
   return {
-    githubToken: document.getElementById("githubToken") as HTMLInputElement,
-    deleteGithubToken: document.getElementById(
-      "deleteGithubToken",
+    githubToken: container.querySelector("#githubToken") as HTMLInputElement,
+    deleteGithubToken: container.querySelector(
+      "#deleteGithubToken",
     ) as HTMLButtonElement,
-    aiProvider: document.getElementById("aiProvider") as HTMLSelectElement,
-    apiKey: document.getElementById("apiKey") as HTMLInputElement,
-    deleteApiKey: document.getElementById("deleteApiKey") as HTMLButtonElement,
-    openCodeEndpointField: document.getElementById(
-      "openCodeEndpointField",
+    aiProvider: container.querySelector("#aiProvider") as HTMLSelectElement,
+    apiKey: container.querySelector("#apiKey") as HTMLInputElement,
+    deleteApiKey: container.querySelector("#deleteApiKey") as HTMLButtonElement,
+    openCodeEndpointField: container.querySelector(
+      "#openCodeEndpointField",
     ) as HTMLElement,
-    openCodeEndpoint: document.getElementById(
-      "openCodeEndpoint",
+    openCodeEndpoint: container.querySelector(
+      "#openCodeEndpoint",
     ) as HTMLSelectElement,
-    fetchModels: document.getElementById("fetchModels") as HTMLButtonElement,
-    modelSelect: document.getElementById("modelSelect") as HTMLSelectElement,
-    listPrivacy: document.getElementById("listPrivacy") as HTMLSelectElement,
-    enableEmojis: document.getElementById("enableEmojis") as HTMLInputElement,
-    enableCategoryPrefix: document.getElementById(
-      "enableCategoryPrefix",
+    fetchModels: container.querySelector("#fetchModels") as HTMLButtonElement,
+    modelSelect: container.querySelector("#modelSelect") as HTMLSelectElement,
+    listPrivacy: container.querySelector("#listPrivacy") as HTMLSelectElement,
+    enableEmojis: container.querySelector("#enableEmojis") as HTMLInputElement,
+    enableCategoryPrefix: container.querySelector(
+      "#enableCategoryPrefix",
     ) as HTMLInputElement,
-    autoFormat: document.getElementById("autoFormat") as HTMLInputElement,
+    autoFormat: container.querySelector("#autoFormat") as HTMLInputElement,
   };
 }
