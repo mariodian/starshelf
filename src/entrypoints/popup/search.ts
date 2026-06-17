@@ -102,6 +102,7 @@ export async function initSearchTab(): Promise<void> {
         performSearch(searchInput!.value.trim());
       }, 150);
     });
+    searchInput.focus();
   }
 }
 
