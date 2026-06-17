@@ -360,6 +360,125 @@ export async function getAllListedRepoIds(
   return repoIds;
 }
 
+export interface RepoListMembership {
+  listId: string;
+  listName: string;
+}
+
+export async function getRepoListMap(
+  token: string,
+  signal?: AbortSignal,
+): Promise<Map<string, RepoListMembership>> {
+  const memberships = new Map<string, RepoListMembership>();
+
+  type ListsData = {
+    viewer: {
+      lists: {
+        nodes: Array<{
+          id: string;
+          name: string;
+          items: {
+            nodes: Array<{ id: string } | null>;
+            pageInfo: { hasNextPage: boolean; endCursor: string | null };
+          };
+        }>;
+      };
+    };
+  };
+
+  const data = await graphqlRequest<ListsData>(
+    token,
+    `query {
+      viewer {
+        lists(first: 100) {
+          nodes {
+            id
+            name
+            items(first: ${GRAPHQL_PAGE_SIZE}) {
+              nodes { ... on Repository { id } }
+              pageInfo { hasNextPage endCursor }
+            }
+          }
+        }
+      }
+    }`,
+    undefined,
+    signal,
+  );
+
+  type ItemPageData = {
+    node: {
+      items: {
+        nodes: Array<{ id: string } | null>;
+        pageInfo: { hasNextPage: boolean; endCursor: string | null };
+      };
+    };
+  };
+
+  for (const list of data.viewer.lists.nodes) {
+    for (const node of list.items.nodes) {
+      if (node && !memberships.has(node.id)) {
+        memberships.set(node.id, { listId: list.id, listName: list.name });
+      }
+    }
+  }
+
+  let paginating = data.viewer.lists.nodes
+    .filter((l) => l.items.pageInfo.hasNextPage)
+    .map((l) => ({
+      id: l.id,
+      name: l.name,
+      cursor: l.items.pageInfo.endCursor!,
+    }));
+
+  while (paginating.length > 0) {
+    if (signal?.aborted) break;
+
+    const results = await Promise.all(
+      paginating.map(({ id, cursor }) =>
+        graphqlRequest<ItemPageData>(
+          token,
+          `query($listId: ID!, $cursor: String) {
+            node(id: $listId) {
+              ... on UserList {
+                items(first: ${GRAPHQL_PAGE_SIZE}, after: $cursor) {
+                  nodes { ... on Repository { id } }
+                  pageInfo { hasNextPage endCursor }
+                }
+              }
+            }
+          }`,
+          { listId: id, cursor },
+          signal,
+        ),
+      ),
+    );
+
+    const next: typeof paginating = [];
+    for (let i = 0; i < results.length; i++) {
+      const ip = results[i].node.items;
+      for (const node of ip.nodes) {
+        if (node && !memberships.has(node.id)) {
+          memberships.set(node.id, {
+            listId: paginating[i].id,
+            listName: paginating[i].name,
+          });
+        }
+      }
+      if (ip.pageInfo.hasNextPage && ip.pageInfo.endCursor) {
+        next.push({
+          id: paginating[i].id,
+          name: paginating[i].name,
+          cursor: ip.pageInfo.endCursor,
+        });
+      }
+    }
+    paginating = next;
+  }
+
+  return memberships;
+}
+
 export interface StarredRepoWithLists {
   nodeId: string;
   nameWithOwner: string;

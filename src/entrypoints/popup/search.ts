@@ -25,7 +25,7 @@ export function renderSearchTab(): HTMLElement {
       <input
         type="search"
         id="searchInput"
-        placeholder="Search your starred repos"
+        placeholder="Search a repo e.g. react, vue, d3..."
         autocomplete="off"
       />
     </div>
@@ -36,7 +36,9 @@ export function renderSearchTab(): HTMLElement {
     </div>
     <div id="readyEmpty" style="display: none">
       <p class="empty-title">Ready to search</p>
-      <p class="empty-hint">Start typing to find your starred repos.</p>
+      <p class="empty-hint">
+        Start typing to find your starred repos.<br />Sync repos from github at any time.
+      </p>
     </div>
     <div id="searchEmpty" style="display: none">
       <p class="empty-title">No results found</p>
@@ -108,6 +110,7 @@ async function loadState() {
   allRepos = Object.values(repos);
 
   if (allRepos.length > 0) {
+    if (searchInput) searchInput.disabled = false;
     fuse = new Fuse(allRepos, {
       keys: [
         { name: "fullName", weight: 0.4 },
@@ -184,10 +187,11 @@ function hideAllEmpty() {
 }
 
 function showDefaultEmpty() {
-  if (!defaultEmpty || !syncControls) return;
+  if (!defaultEmpty || !syncControls || !searchInput) return;
   hideAllEmpty();
   defaultEmpty.style.display = "";
   syncControls.style.display = "";
+  searchInput.disabled = true;
 }
 
 function showReadyEmpty() {
@@ -233,13 +237,28 @@ function performSearch(query: string) {
   } else {
     showSearchEmpty();
   }
-  searchResults!.innerHTML = results
-    .map(({ item }) => {
+
+  const groups = new Map<string, typeof results>();
+  for (const result of results) {
+    const key = result.item.listName ?? "";
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key)!.push(result);
+  }
+
+  const sortedGroups = Array.from(groups.entries()).sort((a, b) =>
+    stripEmoji(a[0]).localeCompare(stripEmoji(b[0])),
+  );
+
+  let html = "";
+  for (const [category, items] of sortedGroups) {
+    items.sort((a, b) => a.item.fullName.localeCompare(b.item.fullName));
+    const header = category
+      ? `<div class="result-group-header">${escapeHtml(category)}</div>`
+      : "";
+    html += `<div class="result-group">${header}`;
+    for (const { item } of items) {
       const lang = item.language
         ? `<span class="result-lang">${escapeHtml(item.language)}</span>`
-        : "";
-      const list = item.listName
-        ? `<span class="result-list">${escapeHtml(item.listName)}</span>`
         : "";
       const desc = item.description
         ? `<span class="result-desc">${escapeHtml(item.description)}</span>`
@@ -249,15 +268,19 @@ function performSearch(query: string) {
           ? `<span class="result-topics">${item.topics.map(escapeHtml).join(", ")}</span>`
           : "";
 
-      return `<div class="search-result">
+      const meta = lang ? `<div class="result-meta">${lang}</div>` : "";
+
+      html += `<div class="search-result">
         <div class="result-header">
           <a href="https://github.com/${escapeHtml(item.fullName)}" target="_blank" class="result-name">${escapeHtml(item.fullName)}</a>
-          ${list}${lang}
+          ${meta}
         </div>
         ${desc}${topics}
       </div>`;
-    })
-    .join("");
+    }
+    html += `</div>`;
+  }
+  searchResults!.innerHTML = html;
 }
 
 export function onSyncProgress(status: SyncStatus): void {
@@ -270,4 +293,10 @@ function escapeHtml(str: string): string {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
+}
+
+function stripEmoji(str: string): string {
+  return str
+    .replace(/\p{Emoji_Presentation}|\p{Extended_Pictographic}/gu, "")
+    .trim();
 }

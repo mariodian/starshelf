@@ -24,6 +24,7 @@ import {
   deleteUserList,
   batchCategorize,
   streamAllStarredRepos,
+  getRepoListMap,
   type GitHubList,
 } from "@/shared/github-lists";
 import type { AiProviderClient } from "@/shared/providers/base";
@@ -675,12 +676,19 @@ async function handleSyncRepos(): Promise<
 
   await updateSyncStatus({ state: "running", synced: 0 });
 
+  let synced = 0;
   try {
-    let synced = 0;
+    await updateSyncStatus({
+      state: "running",
+      synced: 0,
+      message: "Fetching repo lists...",
+    });
+    const listMap = await getRepoListMap(token, signal);
 
     for await (const repo of streamAllStarredRepos(token, signal)) {
       if (signal.aborted) break;
 
+      const membership = listMap.get(repo.nodeId);
       const now = new Date().toISOString();
       await storage.saveRepo({
         owner: repo.owner,
@@ -690,6 +698,8 @@ async function handleSyncRepos(): Promise<
         description: repo.description,
         language: repo.language,
         topics: repo.topics,
+        listId: membership?.listId,
+        listName: membership?.listName,
         starredAt: now,
         updatedAt: now,
       });
@@ -716,12 +726,21 @@ async function handleSyncRepos(): Promise<
 
     await updateSyncStatus(terminalStatus);
   } catch (err) {
-    const errorStatus: SyncStatus = {
-      state: "error",
-      message: err instanceof Error ? err.message : "Unknown error",
-    };
-    await updateSyncStatus(errorStatus);
-    logger.error("[sync] bg | syncRepos failed:", err);
+    if (signal.aborted || (err instanceof Error && err.name === "AbortError")) {
+      const cancelledStatus: SyncStatus = {
+        state: "cancelled",
+        synced,
+        completedAt: new Date().toISOString(),
+      };
+      await updateSyncStatus(cancelledStatus);
+    } else {
+      const errorStatus: SyncStatus = {
+        state: "error",
+        message: err instanceof Error ? err.message : "Unknown error",
+      };
+      await updateSyncStatus(errorStatus);
+      logger.error("[sync] bg | syncRepos failed:", err);
+    }
   } finally {
     syncAbortController = null;
   }

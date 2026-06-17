@@ -12,6 +12,7 @@ import {
   fuzzyMatchListName,
   ScopeError,
   getAllListedRepoIds,
+  getRepoListMap,
   streamUncategorizedRepos,
   streamAllStarredRepos,
   batchCategorize,
@@ -368,6 +369,158 @@ describe("getAllListedRepoIds", () => {
 
     const ids = await getAllListedRepoIds("token");
     expect(ids.size).toBe(1);
+  });
+});
+
+describe("getRepoListMap", () => {
+  it("returns an empty map when there are no lists", async () => {
+    mockGraphqlResolve({
+      viewer: {
+        lists: {
+          nodes: [],
+        },
+      },
+    });
+
+    const result = await getRepoListMap("token");
+    expect(result.size).toBe(0);
+  });
+
+  it("maps repo IDs to their list info", async () => {
+    mockGraphqlResolve({
+      viewer: {
+        lists: {
+          nodes: [
+            {
+              id: "L1",
+              name: "Frontend",
+              items: {
+                nodes: [{ id: "R1" }, { id: "R2" }],
+                pageInfo: { hasNextPage: false, endCursor: null },
+              },
+            },
+          ],
+        },
+      },
+    });
+
+    const result = await getRepoListMap("token");
+    expect(result.size).toBe(2);
+    expect(result.get("R1")).toEqual({
+      listId: "L1",
+      listName: "Frontend",
+    });
+    expect(result.get("R2")).toEqual({
+      listId: "L1",
+      listName: "Frontend",
+    });
+  });
+
+  it("follows pagination within list items", async () => {
+    vi.mocked(fetch)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          data: {
+            viewer: {
+              lists: {
+                nodes: [
+                  {
+                    id: "L1",
+                    name: "Backend",
+                    items: {
+                      nodes: [{ id: "R1" }],
+                      pageInfo: { hasNextPage: true, endCursor: "c1" },
+                    },
+                  },
+                ],
+              },
+            },
+          },
+        }),
+      } as Response)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          data: {
+            node: {
+              items: {
+                nodes: [{ id: "R2" }],
+                pageInfo: { hasNextPage: false, endCursor: null },
+              },
+            },
+          },
+        }),
+      } as Response);
+
+    const result = await getRepoListMap("token");
+    expect(result.size).toBe(2);
+    expect(result.get("R1")).toEqual({
+      listId: "L1",
+      listName: "Backend",
+    });
+    expect(result.get("R2")).toEqual({
+      listId: "L1",
+      listName: "Backend",
+    });
+  });
+
+  it("uses first-encountered list for repos in multiple lists", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        data: {
+          viewer: {
+            lists: {
+              nodes: [
+                {
+                  id: "L1",
+                  name: "First",
+                  items: {
+                    nodes: [{ id: "R1" }],
+                    pageInfo: { hasNextPage: false, endCursor: null },
+                  },
+                },
+                {
+                  id: "L2",
+                  name: "Second",
+                  items: {
+                    nodes: [{ id: "R1" }],
+                    pageInfo: { hasNextPage: false, endCursor: null },
+                  },
+                },
+              ],
+            },
+          },
+        },
+      }),
+    } as Response);
+
+    const result = await getRepoListMap("token");
+    expect(result.size).toBe(1);
+    expect(result.get("R1")).toEqual({ listId: "L1", listName: "First" });
+  });
+
+  it("skips null items in the nodes array", async () => {
+    mockGraphqlResolve({
+      viewer: {
+        lists: {
+          nodes: [
+            {
+              id: "L1",
+              name: "Tools",
+              items: {
+                nodes: [{ id: "R1" }, null, { id: "R2" }],
+                pageInfo: { hasNextPage: false, endCursor: null },
+              },
+            },
+          ],
+        },
+      },
+    });
+
+    const result = await getRepoListMap("token");
+    expect(result.size).toBe(2);
   });
 });
 
