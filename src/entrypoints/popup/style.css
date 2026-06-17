@@ -250,3 +250,75 @@ input[type="checkbox"]:disabled {
 input[type="checkbox"]:disabled + label {
   opacity: 0.5;
 }
+
+#searchInput {
+  width: 100%;
+  margin-bottom: 8px;
+}
+
+#searchResults {
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.search-result {
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border-secondary);
+}
+
+.search-result:last-child {
+  border-bottom: none;
+}
+
+.result-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.result-name {
+  font-size: 12px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.result-name:hover {
+  text-decoration: underline;
+}
+
+.result-lang,
+.result-list {
+  font-size: 10px;
+  color: var(--text-muted);
+  background: var(--bg-input);
+  border: 1px solid var(--border-secondary);
+  border-radius: 3px;
+  padding: 1px 5px;
+}
+
+.result-list {
+  color: var(--text-link);
+  border-color: var(--border-focus);
+}
+
+.result-desc {
+  display: block;
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-top: 2px;
+  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.result-topics {
+  display: block;
+  font-size: 10px;
+  color: var(--text-muted);
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

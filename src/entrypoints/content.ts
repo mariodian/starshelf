@@ -102,20 +102,15 @@ function onStarClick(event: Event) {
     btn.className,
   );
 
-  // current === true means the UNSTAR button was clicked; we only act on star actions
-  if (current) {
-    logger.log("[stars] ignoring — unstar action");
-    return;
-  }
-
-  logger.log("[stars] action: star | sending message");
+  const action = current ? "unstar" : "star";
+  logger.log(`[stars] action: ${action} | sending message`);
 
   browser.runtime.sendMessage({
     type: "repoStarClicked",
     payload: {
       owner: currentRepo.owner,
       repo: currentRepo.repo,
-      action: "star",
+      action,
     },
   });
 }

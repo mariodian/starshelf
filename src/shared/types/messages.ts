@@ -27,6 +27,14 @@ export interface CancelBatchMessage {
   type: "cancelBatch";
 }
 
+export interface SyncReposMessage {
+  type: "syncRepos";
+}
+
+export interface CancelSyncMessage {
+  type: "cancelSync";
+}
+
 // Messages sent from background to content script / popup
 export interface UpdateStarStatusMessage {
   type: "updateStarStatus";
@@ -62,8 +70,27 @@ export interface BatchProgressMessage {
   payload: BatchStatus;
 }
 
+export type SyncStatus =
+  | { state: "idle" }
+  | { state: "running"; synced: number; message?: string }
+  | { state: "done"; synced: number; completedAt: string }
+  | { state: "error"; message: string }
+  | { state: "cancelled"; synced: number; completedAt: string };
+
+export interface SyncProgressMessage {
+  type: "syncProgress";
+  payload: SyncStatus;
+}
+
 // Union types for sender and receiver
 export type ContentMessage = RepoStarClickedMessage | RegenerateCategoryMessage;
-export type PopupMessage = StartBatchMessage | CancelBatchMessage;
-export type BackgroundMessage = UpdateStarStatusMessage | BatchProgressMessage;
+export type PopupMessage =
+  | StartBatchMessage
+  | CancelBatchMessage
+  | SyncReposMessage
+  | CancelSyncMessage;
+export type BackgroundMessage =
+  | UpdateStarStatusMessage
+  | BatchProgressMessage
+  | SyncProgressMessage;
 export type RuntimeMessage = ContentMessage | PopupMessage;

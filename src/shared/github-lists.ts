@@ -461,6 +461,72 @@ export async function* streamUncategorizedRepos(
   }
 }
 
+export async function* streamAllStarredRepos(
+  token: string,
+  signal?: AbortSignal,
+): AsyncGenerator<StarredRepoWithLists, void, unknown> {
+  let cursor: string | null = null;
+  let hasNextPage = true;
+
+  while (hasNextPage) {
+    if (signal?.aborted) break;
+
+    type PageData = {
+      viewer: {
+        starredRepositories: {
+          pageInfo: { hasNextPage: boolean; endCursor: string | null };
+          nodes: Array<{
+            id: string;
+            nameWithOwner: string;
+            description: string | null;
+            primaryLanguage: { name: string } | null;
+            repositoryTopics: { nodes: Array<{ topic: { name: string } }> };
+          }>;
+        };
+      };
+    };
+
+    const data: PageData = await graphqlRequest<PageData>(
+      token,
+      `query($cursor: String) {
+        viewer {
+          starredRepositories(first: ${GRAPHQL_PAGE_SIZE}, after: $cursor) {
+            pageInfo { hasNextPage endCursor }
+            nodes {
+              id
+              nameWithOwner
+              description
+              primaryLanguage { name }
+              repositoryTopics(first: 10) { nodes { topic { name } } }
+            }
+          }
+        }
+      }`,
+      cursor ? { cursor } : undefined,
+      signal,
+    );
+
+    const repos = data.viewer.starredRepositories;
+    hasNextPage = repos.pageInfo.hasNextPage;
+    cursor = repos.pageInfo.endCursor;
+
+    for (const node of repos.nodes) {
+      const [owner, repo] = node.nameWithOwner.split("/");
+      yield {
+        nodeId: node.id,
+        nameWithOwner: node.nameWithOwner,
+        owner,
+        repo,
+        description: node.description || undefined,
+        language: node.primaryLanguage?.name || undefined,
+        topics: node.repositoryTopics.nodes.map(
+          (n: { topic: { name: string } }) => n.topic.name,
+        ),
+      };
+    }
+  }
+}
+
 export async function batchCategorize(
   options: BatchCategorizeOptions,
 ): Promise<BatchCategorizeResult> {

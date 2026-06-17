@@ -23,5 +23,8 @@
     "typescript": "^5.9.3",
     "vitest": "^4.1.7",
     "wxt": "^0.20.26"
+  },
+  "dependencies": {
+    "fuse.js": "^7.4.2"
   }
 }

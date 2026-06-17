@@ -180,4 +180,116 @@ describe("ExtensionStorage", () => {
       expect(settings.providers.openai.apiKey).toBe("new-openai-key");
     });
   });
+
+  describe("repo storage", () => {
+    it("getRepos returns empty object when no repos stored", async () => {
+      const { storage } = await import("@/shared/storage");
+      const repos = await storage.getRepos();
+      expect(repos).toEqual({});
+    });
+
+    it("saveRepo stores a repo record", async () => {
+      const { storage } = await import("@/shared/storage");
+      const record = {
+        owner: "octocat",
+        repo: "hello-world",
+        fullName: "octocat/hello-world",
+        nodeId: "node123",
+        description: "A test repo",
+        language: "TypeScript",
+        topics: ["test", "demo"],
+        listId: "list1",
+        listName: "Testing",
+        starredAt: "2024-01-01T00:00:00Z",
+        updatedAt: "2024-01-01T00:00:00Z",
+      };
+
+      await storage.saveRepo(record);
+      const repos = await storage.getRepos();
+
+      expect(repos["octocat/hello-world"]).toEqual(record);
+    });
+
+    it("saveRepo updates an existing record", async () => {
+      const { storage } = await import("@/shared/storage");
+      const record = {
+        owner: "octocat",
+        repo: "hello-world",
+        fullName: "octocat/hello-world",
+        nodeId: "node123",
+        topics: ["test"],
+        starredAt: "2024-01-01T00:00:00Z",
+        updatedAt: "2024-01-01T00:00:00Z",
+      };
+
+      await storage.saveRepo(record);
+      await storage.saveRepo({ ...record, description: "Updated" });
+
+      const repos = await storage.getRepos();
+      expect(repos["octocat/hello-world"].description).toBe("Updated");
+    });
+
+    it("removeRepo deletes a repo record", async () => {
+      const { storage } = await import("@/shared/storage");
+      const record = {
+        owner: "octocat",
+        repo: "hello-world",
+        fullName: "octocat/hello-world",
+        nodeId: "node123",
+        topics: [],
+        starredAt: "2024-01-01T00:00:00Z",
+        updatedAt: "2024-01-01T00:00:00Z",
+      };
+
+      await storage.saveRepo(record);
+      await storage.removeRepo("octocat/hello-world");
+
+      const repos = await storage.getRepos();
+      expect(repos["octocat/hello-world"]).toBeUndefined();
+    });
+
+    it("getRepoCount returns the number of stored repos", async () => {
+      const { storage } = await import("@/shared/storage");
+
+      expect(await storage.getRepoCount()).toBe(0);
+
+      await storage.saveRepo({
+        owner: "a",
+        repo: "b",
+        fullName: "a/b",
+        nodeId: "n1",
+        topics: [],
+        starredAt: "2024-01-01T00:00:00Z",
+        updatedAt: "2024-01-01T00:00:00Z",
+      });
+      await storage.saveRepo({
+        owner: "c",
+        repo: "d",
+        fullName: "c/d",
+        nodeId: "n2",
+        topics: [],
+        starredAt: "2024-01-01T00:00:00Z",
+        updatedAt: "2024-01-01T00:00:00Z",
+      });
+
+      expect(await storage.getRepoCount()).toBe(2);
+    });
+
+    it("clearRepos removes all stored repos", async () => {
+      const { storage } = await import("@/shared/storage");
+
+      await storage.saveRepo({
+        owner: "a",
+        repo: "b",
+        fullName: "a/b",
+        nodeId: "n1",
+        topics: [],
+        starredAt: "2024-01-01T00:00:00Z",
+        updatedAt: "2024-01-01T00:00:00Z",
+      });
+
+      await storage.clearRepos();
+      expect(await storage.getRepoCount()).toBe(0);
+    });
+  });
 });

@@ -13,6 +13,30 @@
         <span>Starshelf</span>
       </h1>
 
+      <section id="searchSection">
+        <h2>Search Starred Repos</h2>
+        <div id="searchDisabledState">
+          <p>Search is disabled because no repo metadata is stored locally.</p>
+          <div class="field">
+            <button id="fullSyncBtn">Full Sync from GitHub</button>
+            <button id="cancelSync" class="danger" style="display: none">
+              Cancel
+            </button>
+          </div>
+          <p id="syncStatus" class="hint">Ready</p>
+          <p class="hint">Or star any repo to enable search instantly.</p>
+        </div>
+        <div id="searchEnabledState" style="display: none">
+          <input
+            type="search"
+            id="searchInput"
+            placeholder="Find a starred repo…"
+            autocomplete="off"
+          />
+          <div id="searchResults"></div>
+        </div>
+      </section>
+
       <section>
         <h2>GitHub Token</h2>
         <p>

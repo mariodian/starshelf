@@ -1,3 +1,19 @@
+export interface RepoRecord {
+  owner: string;
+  repo: string;
+  fullName: string;
+  nodeId: string;
+  description?: string;
+  language?: string;
+  topics: string[];
+  listId?: string;
+  listName?: string;
+  starredAt: string;
+  updatedAt: string;
+}
+
+export type RepoIndex = Record<string, RepoRecord>;
+
 export interface ExtensionSettings {
   githubToken?: string;
   activeProvider: "anthropic" | "openai" | "opencode";
@@ -77,6 +93,31 @@ export class ExtensionStorage {
 
   async setSettings(settings: ExtensionSettings): Promise<void> {
     await browser.storage.local.set(settings);
+  }
+
+  async getRepos(): Promise<RepoIndex> {
+    return (await this.backend.get<RepoIndex>("repos")) ?? {};
+  }
+
+  async saveRepo(record: RepoRecord): Promise<void> {
+    const repos = await this.getRepos();
+    repos[record.fullName] = record;
+    await this.backend.set("repos", repos);
+  }
+
+  async removeRepo(fullName: string): Promise<void> {
+    const repos = await this.getRepos();
+    delete repos[fullName];
+    await this.backend.set("repos", repos);
+  }
+
+  async getRepoCount(): Promise<number> {
+    const repos = await this.getRepos();
+    return Object.keys(repos).length;
+  }
+
+  async clearRepos(): Promise<void> {
+    await this.backend.set("repos", {});
   }
 
   async bootstrap(partial: Partial<ExtensionSettings>): Promise<void> {

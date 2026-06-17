@@ -13,6 +13,7 @@ import {
   ScopeError,
   getAllListedRepoIds,
   streamUncategorizedRepos,
+  streamAllStarredRepos,
   batchCategorize,
 } from "@/shared/github-lists";
 import type { AiProviderClient } from "@/shared/providers/base";
@@ -774,5 +775,145 @@ describe("batchCategorize", () => {
     expect(result.categorized).toBe(2);
     expect(result.failed).toBe(0);
     expect(client.categorizeBatch).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("streamAllStarredRepos", () => {
+  it("yields all starred repos without filtering", async () => {
+    mockGraphqlResolve({
+      viewer: {
+        starredRepositories: {
+          pageInfo: { hasNextPage: false, endCursor: null },
+          nodes: [
+            {
+              id: "R_1",
+              nameWithOwner: "owner/repo1",
+              description: "A test repo",
+              primaryLanguage: { name: "TypeScript" },
+              repositoryTopics: {
+                nodes: [{ topic: { name: "cli" } }],
+              },
+            },
+            {
+              id: "R_2",
+              nameWithOwner: "owner/repo2",
+              description: null,
+              primaryLanguage: null,
+              repositoryTopics: { nodes: [] },
+            },
+          ],
+        },
+      },
+    });
+
+    const results = [];
+    for await (const repo of streamAllStarredRepos("token")) {
+      results.push(repo);
+    }
+
+    expect(results).toHaveLength(2);
+    expect(results[0].nodeId).toBe("R_1");
+    expect(results[0].nameWithOwner).toBe("owner/repo1");
+    expect(results[0].owner).toBe("owner");
+    expect(results[0].repo).toBe("repo1");
+    expect(results[0].description).toBe("A test repo");
+    expect(results[0].language).toBe("TypeScript");
+    expect(results[0].topics).toEqual(["cli"]);
+    expect(results[1].nodeId).toBe("R_2");
+    expect(results[1].description).toBeUndefined();
+    expect(results[1].language).toBeUndefined();
+  });
+
+  it("follows pagination across multiple pages", async () => {
+    vi.mocked(fetch)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          data: {
+            viewer: {
+              starredRepositories: {
+                pageInfo: { hasNextPage: true, endCursor: "cursor1" },
+                nodes: [
+                  {
+                    id: "R_1",
+                    nameWithOwner: "o/r1",
+                    description: null,
+                    primaryLanguage: null,
+                    repositoryTopics: { nodes: [] },
+                  },
+                ],
+              },
+            },
+          },
+        }),
+      } as Response)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          data: {
+            viewer: {
+              starredRepositories: {
+                pageInfo: { hasNextPage: false, endCursor: null },
+                nodes: [
+                  {
+                    id: "R_2",
+                    nameWithOwner: "o/r2",
+                    description: "Second repo",
+                    primaryLanguage: { name: "Python" },
+                    repositoryTopics: { nodes: [] },
+                  },
+                ],
+              },
+            },
+          },
+        }),
+      } as Response);
+
+    const results = [];
+    for await (const repo of streamAllStarredRepos("token")) {
+      results.push(repo);
+    }
+
+    expect(results).toHaveLength(2);
+    expect(results[0].nameWithOwner).toBe("o/r1");
+    expect(results[1].nameWithOwner).toBe("o/r2");
+    expect(results[1].language).toBe("Python");
+  });
+
+  it("respects abort signal", async () => {
+    vi.mocked(fetch).mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        data: {
+          viewer: {
+            starredRepositories: {
+              pageInfo: { hasNextPage: true, endCursor: "cursor1" },
+              nodes: [
+                {
+                  id: "R_1",
+                  nameWithOwner: "o/r1",
+                  description: null,
+                  primaryLanguage: null,
+                  repositoryTopics: { nodes: [] },
+                },
+              ],
+            },
+          },
+        },
+      }),
+    } as Response);
+
+    const controller = new AbortController();
+    controller.abort();
+
+    const results = [];
+    for await (const repo of streamAllStarredRepos(
+      "token",
+      controller.signal,
+    )) {
+      results.push(repo);
+    }
+
+    expect(results).toHaveLength(0);
   });
 });

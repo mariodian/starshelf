@@ -4,6 +4,8 @@ import type {
   RuntimeMessage,
   BatchStatus,
   BatchProgressMessage,
+  SyncStatus,
+  SyncProgressMessage,
 } from "@/shared/types/messages";
 import { storage, type ExtensionSettings } from "@/shared/storage";
 import {
@@ -21,6 +23,7 @@ import {
   starRepository,
   deleteUserList,
   batchCategorize,
+  streamAllStarredRepos,
   type GitHubList,
 } from "@/shared/github-lists";
 import type { AiProviderClient } from "@/shared/providers/base";
@@ -55,6 +58,10 @@ export default defineBackground(() => {
       return handleStartBatch();
     } else if (message.type === "cancelBatch") {
       return handleCancelBatch();
+    } else if (message.type === "syncRepos") {
+      return handleSyncRepos();
+    } else if (message.type === "cancelSync") {
+      return handleCancelSync();
     }
   });
 });
@@ -223,6 +230,7 @@ async function handleStarClick(
     // GitHub handles removing the repo from any lists on unstar.
     if (action === "unstar") {
       logger.log("[stars] bg unstar branch | fullName:", fullName);
+      await storage.removeRepo(fullName);
       await sendStatus(tabId, owner, repo, "removed");
       return;
     }
@@ -341,6 +349,21 @@ async function handleStarClick(
         listId: result.listId,
         listName: result.listName,
         isNewList: result.isNewList,
+      });
+
+      const now = new Date().toISOString();
+      await storage.saveRepo({
+        owner,
+        repo,
+        fullName,
+        nodeId: repoNodeId,
+        description: metadata.description,
+        language: metadata.language,
+        topics: metadata.topics,
+        listId: result.listId,
+        listName: result.listName,
+        starredAt: now,
+        updatedAt: now,
       });
     }
   } catch (err) {
@@ -621,6 +644,109 @@ async function updateBatchStatus(status: BatchStatus): Promise<void> {
       type: "batchProgress",
       payload: status,
     } as BatchProgressMessage);
+  } catch {
+    // Popup may not be open
+  }
+}
+
+let syncAbortController: AbortController | null = null;
+
+async function handleSyncRepos(): Promise<
+  { alreadyRunning: true } | { error: string } | null
+> {
+  const current = await browser.storage.session
+    .get("syncStatus")
+    .then((r) => r.syncStatus as SyncStatus | undefined);
+  if (current?.state === "running") {
+    return { alreadyRunning: true };
+  }
+
+  const settings = await storage.getSettings();
+  const token = settings.githubToken;
+
+  if (!token) {
+    return {
+      error: "GitHub token is required. Add it in the extension popup.",
+    };
+  }
+
+  syncAbortController = new AbortController();
+  const signal = syncAbortController.signal;
+
+  await updateSyncStatus({ state: "running", synced: 0 });
+
+  try {
+    let synced = 0;
+
+    for await (const repo of streamAllStarredRepos(token, signal)) {
+      if (signal.aborted) break;
+
+      const now = new Date().toISOString();
+      await storage.saveRepo({
+        owner: repo.owner,
+        repo: repo.repo,
+        fullName: repo.nameWithOwner,
+        nodeId: repo.nodeId,
+        description: repo.description,
+        language: repo.language,
+        topics: repo.topics,
+        starredAt: now,
+        updatedAt: now,
+      });
+
+      synced++;
+      await updateSyncStatus({
+        state: "running",
+        synced,
+        message: `Syncing ${repo.nameWithOwner}...`,
+      });
+    }
+
+    const terminalStatus: SyncStatus = signal.aborted
+      ? {
+          state: "cancelled",
+          synced,
+          completedAt: new Date().toISOString(),
+        }
+      : {
+          state: "done",
+          synced,
+          completedAt: new Date().toISOString(),
+        };
+
+    await updateSyncStatus(terminalStatus);
+  } catch (err) {
+    const errorStatus: SyncStatus = {
+      state: "error",
+      message: err instanceof Error ? err.message : "Unknown error",
+    };
+    await updateSyncStatus(errorStatus);
+    logger.error("[sync] bg | syncRepos failed:", err);
+  } finally {
+    syncAbortController = null;
+  }
+
+  return null;
+}
+
+async function handleCancelSync(): Promise<
+  { success: true } | { notRunning: true }
+> {
+  if (!syncAbortController) {
+    return { notRunning: true };
+  }
+
+  syncAbortController.abort();
+  return { success: true };
+}
+
+async function updateSyncStatus(status: SyncStatus): Promise<void> {
+  await browser.storage.session.set({ syncStatus: status });
+  try {
+    await browser.runtime.sendMessage({
+      type: "syncProgress",
+      payload: status,
+    } as SyncProgressMessage);
   } catch {
     // Popup may not be open
   }
