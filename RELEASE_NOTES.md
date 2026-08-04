@@ -5,6 +5,7 @@ For full technical details, see [CHANGELOG.md](./CHANGELOG.md).
 
 | Version                             | Date       | Summary                                          |
 | ----------------------------------- | ---------- | ------------------------------------------------ |
+| [v0.1.3](./release-notes/v0.1.3.md) | 2026-08-04 | Improved star click handling and popup UI polish |
 | [v0.1.2](./release-notes/v0.1.2.md) | 2026-06-17 | Search, tabbed popup, and category sync          |
 | [v0.1.1](./release-notes/v0.1.1.md) | 2026-06-06 | Firefox support and streamlined CI releases      |
 | [v0.1.0](./release-notes/v0.1.0.md) | 2026-06-03 | Batch categorize all starred repos at once       |
