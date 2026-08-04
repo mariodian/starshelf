@@ -85,12 +85,7 @@ export interface SyncProgressMessage {
 // Union types for sender and receiver
 export type ContentMessage = RepoStarClickedMessage | RegenerateCategoryMessage;
 export type PopupMessage =
-  | StartBatchMessage
-  | CancelBatchMessage
-  | SyncReposMessage
-  | CancelSyncMessage;
+  StartBatchMessage | CancelBatchMessage | SyncReposMessage | CancelSyncMessage;
 export type BackgroundMessage =
-  | UpdateStarStatusMessage
-  | BatchProgressMessage
-  | SyncProgressMessage;
+  UpdateStarStatusMessage | BatchProgressMessage | SyncProgressMessage;
 export type RuntimeMessage = ContentMessage | PopupMessage;

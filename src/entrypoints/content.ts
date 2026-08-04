@@ -63,28 +63,71 @@ export default defineContentScript({
 
 // ---------------------------------------------------------------------------
 // Star button click detection — tracks button state to infer intent.
-// MutationObserver callbacks fire in microtask *after* the click, so
-// `wasStarred` holds the pre-click value when our handler runs.
-// Comparing pre-click state to the (already-mutated) DOM gives us intent.
+// Click handlers run before React re-renders, so reading the button at
+// click time yields the pre-click starred/unstarred state.
 // ---------------------------------------------------------------------------
 
 let containerObserver: MutationObserver | null = null;
 let currentRepo: { owner: string; repo: string } | null = null;
-let wasStarred = false;
+let watchedButton: HTMLButtonElement | null = null;
 
+/** Prefer the currently visible star button (desktop or mobile layout). */
 function findStarButton(): HTMLButtonElement | null {
-  const buttons = document.querySelectorAll<HTMLButtonElement>(
-    '.starring-container button[type="submit"]',
+  // New GitHub UI (Primer React repo header, ~2025+)
+  const modern = document.querySelectorAll<HTMLButtonElement>(
+    'button[data-testid="star-button"]',
   );
-  for (const btn of buttons) {
+  for (const btn of modern) {
     if (btn.offsetParent !== null) return btn;
   }
-  return null;
+
+  // Legacy form-based star button
+  const legacy = document.querySelectorAll<HTMLButtonElement>(
+    '.starring-container button[type="submit"]',
+  );
+  for (const btn of legacy) {
+    if (btn.offsetParent !== null) return btn;
+  }
+
+  // Fallback: first match even if not yet laid out (e.g. during SPA paint)
+  return modern[0] ?? legacy[0] ?? null;
 }
 
+/** true when the button currently represents a starred repo. */
 function readButtonState(btn: HTMLButtonElement): boolean {
+  // New UI: aria-label is "Unstar owner/repo" when starred, "Star …" otherwise
+  const ariaLabel = btn.getAttribute("aria-label") ?? "";
+  if (/^Unstar\b/i.test(ariaLabel)) return true;
+  if (/^Star\b/i.test(ariaLabel)) return false;
+
+  // New UI: visible label "Starred" vs "Star"
+  const label =
+    btn.querySelector("[data-component='text']")?.textContent?.trim() ??
+    btn.textContent?.trim() ??
+    "";
+  if (/\bStarred\b/i.test(label)) return true;
+  if (/^Star\b/i.test(label)) return false;
+
+  // Filled star icon
+  if (btn.querySelector(".octicon-star-fill")) return true;
+
+  // Legacy UI: hydro analytics payload
   return (
     btn.getAttribute("data-hydro-click")?.includes("UNSTAR_BUTTON") ?? false
+  );
+}
+
+/** Container to observe for Turbo/React re-renders that replace the button. */
+function findStarContainer(): Element | null {
+  return (
+    document.querySelector('[data-testid="repo-header-actions"]') ??
+    document.querySelector('[data-testid="responsive-social-buttons"]') ??
+    document.querySelector(
+      '.starring-container, [data-testid="star-button-container"]',
+    ) ??
+    document.querySelector('header[data-component="SplitPageLayout.Header"]') ??
+    document.querySelector("#repository-container-header") ??
+    document.querySelector("main")
   );
 }
 
@@ -94,12 +137,10 @@ function onStarClick(event: Event) {
   const current = readButtonState(btn);
 
   logger.log(
-    "[stars] click | wasStarred:",
-    wasStarred,
-    "| current:",
+    "[stars] click | starred:",
     current,
-    "| classList:",
-    btn.className,
+    "| aria-label:",
+    btn.getAttribute("aria-label"),
   );
 
   const action = current ? "unstar" : "star";
@@ -115,26 +156,32 @@ function onStarClick(event: Event) {
   });
 }
 
-let clickListenerAttached = false;
-
 function watchButton(btn: HTMLButtonElement) {
-  if (clickListenerAttached) return;
-  clickListenerAttached = true;
-  wasStarred = readButtonState(btn);
+  if (watchedButton === btn) return;
+
+  if (watchedButton) {
+    watchedButton.removeEventListener("click", onStarClick);
+  }
+
+  watchedButton = btn;
+  const starred = readButtonState(btn);
   logger.log(
-    "[stars] watchButton | wasStarred:",
-    wasStarred,
-    "| classList:",
-    btn.className
-      .split(" ")
-      .filter((c) => c.startsWith("starred") || c.startsWith("Button")),
+    "[stars] watchButton | starred:",
+    starred,
+    "| aria-label:",
+    btn.getAttribute("aria-label"),
+    "| testid:",
+    btn.getAttribute("data-testid"),
   );
   btn.addEventListener("click", onStarClick);
 }
 
 function initWatcher() {
   if (containerObserver) containerObserver.disconnect();
-  clickListenerAttached = false;
+  if (watchedButton) {
+    watchedButton.removeEventListener("click", onStarClick);
+    watchedButton = null;
+  }
   currentRepo = parseRepoFromUrl(location.href);
 
   logger.log(
@@ -152,19 +199,14 @@ function initWatcher() {
     watchButton(btn);
   }
 
-  // Watch the container where the star button lives;
-  // GitHub may replace it entirely during Turbo navigation.
-  const container =
-    document.querySelector(
-      '.starring-container, [data-testid="star-button-container"]',
-    ) ?? document.querySelector("#repository-container-header");
-
+  // Watch the header/actions area; GitHub may replace the star button on
+  // Turbo navigation or after a star/unstar React re-render.
+  const container = findStarContainer();
   if (container) {
     containerObserver = new MutationObserver(() => {
       const newBtn = findStarButton();
       logger.log("[stars] container mutated | found new btn:", !!newBtn);
       if (newBtn) {
-        clickListenerAttached = false;
         watchButton(newBtn);
       }
     });
