@@ -101,7 +101,23 @@ export class ExtensionStorage {
 
   async saveRepo(record: RepoRecord): Promise<void> {
     const repos = await this.getRepos();
-    repos[record.fullName] = record;
+    // chrome.storage rejects `undefined`. Optional fields stay off the record
+    // until they have a value, which is what a first sync of an unlisted repo hits.
+    const stored: RepoRecord = {
+      owner: record.owner,
+      repo: record.repo,
+      fullName: record.fullName,
+      nodeId: record.nodeId,
+      topics: record.topics,
+      starredAt: record.starredAt,
+      updatedAt: record.updatedAt,
+    };
+    if (record.description !== undefined)
+      stored.description = record.description;
+    if (record.language !== undefined) stored.language = record.language;
+    if (record.listId !== undefined) stored.listId = record.listId;
+    if (record.listName !== undefined) stored.listName = record.listName;
+    repos[record.fullName] = stored;
     await this.backend.set("repos", repos);
   }
 

@@ -210,6 +210,34 @@ describe("ExtensionStorage", () => {
       expect(repos["octocat/hello-world"]).toEqual(record);
     });
 
+    it("saveRepo omits undefined optional fields", async () => {
+      const { storage } = await import("@/shared/storage");
+      await storage.saveRepo({
+        owner: "octocat",
+        repo: "hello-world",
+        fullName: "octocat/hello-world",
+        nodeId: "node123",
+        description: undefined,
+        language: undefined,
+        topics: [],
+        listId: undefined,
+        listName: undefined,
+        starredAt: "2024-01-01T00:00:00Z",
+        updatedAt: "2024-01-01T00:00:00Z",
+      });
+
+      const repos = await storage.getRepos();
+      expect(repos["octocat/hello-world"]).toEqual({
+        owner: "octocat",
+        repo: "hello-world",
+        fullName: "octocat/hello-world",
+        nodeId: "node123",
+        topics: [],
+        starredAt: "2024-01-01T00:00:00Z",
+        updatedAt: "2024-01-01T00:00:00Z",
+      });
+    });
+
     it("saveRepo updates an existing record", async () => {
       const { storage } = await import("@/shared/storage");
       const record = {

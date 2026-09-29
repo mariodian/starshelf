@@ -657,6 +657,37 @@ describe("streamUncategorizedRepos", () => {
 
     expect(results).toEqual([]);
   });
+
+  it("skips null nodes and missing topic lists", async () => {
+    mockGraphqlResolve({
+      viewer: {
+        starredRepositories: {
+          pageInfo: { hasNextPage: false, endCursor: null },
+          nodes: [
+            null,
+            {
+              id: "R_1",
+              nameWithOwner: "owner/repo1",
+              description: null,
+              primaryLanguage: null,
+              repositoryTopics: {
+                nodes: [null, { topic: null }, { topic: { name: "cli" } }],
+              },
+            },
+          ],
+        },
+      },
+    });
+
+    const results = [];
+    for await (const repo of streamUncategorizedRepos("token")) {
+      results.push(repo);
+    }
+
+    expect(results).toHaveLength(1);
+    expect(results[0].nameWithOwner).toBe("owner/repo1");
+    expect(results[0].topics).toEqual(["cli"]);
+  });
 });
 
 describe("batchCategorize", () => {
@@ -975,6 +1006,46 @@ describe("streamAllStarredRepos", () => {
     expect(results[1].nodeId).toBe("R_2");
     expect(results[1].description).toBeUndefined();
     expect(results[1].language).toBeUndefined();
+  });
+
+  it("skips null nodes and missing topic lists", async () => {
+    mockGraphqlResolve({
+      viewer: {
+        starredRepositories: {
+          pageInfo: { hasNextPage: false, endCursor: null },
+          nodes: [
+            null,
+            {
+              id: "R_1",
+              nameWithOwner: "owner/repo1",
+              description: null,
+              primaryLanguage: null,
+              repositoryTopics: {
+                nodes: [null, { topic: null }, { topic: { name: "cli" } }],
+              },
+            },
+            {
+              id: "R_2",
+              nameWithOwner: "owner/repo2",
+              description: null,
+              primaryLanguage: null,
+              repositoryTopics: null,
+            },
+          ],
+        },
+      },
+    });
+
+    const results = [];
+    for await (const repo of streamAllStarredRepos("token")) {
+      results.push(repo);
+    }
+
+    expect(results).toHaveLength(2);
+    expect(results[0].nameWithOwner).toBe("owner/repo1");
+    expect(results[0].topics).toEqual(["cli"]);
+    expect(results[1].nameWithOwner).toBe("owner/repo2");
+    expect(results[1].topics).toEqual([]);
   });
 
   it("follows pagination across multiple pages", async () => {

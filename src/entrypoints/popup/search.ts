@@ -79,11 +79,15 @@ export async function initSearchTab(): Promise<void> {
 
   if (fullSyncBtn) {
     fullSyncBtn.addEventListener("click", async () => {
-      const reply = await browser.runtime.sendMessage({ type: "syncRepos" });
-      if (reply?.alreadyRunning) {
-        syncStatusEl!.textContent = "Sync already running";
-      } else if (reply?.error) {
-        syncStatusEl!.textContent = `Error: ${reply.error}`;
+      try {
+        const reply = await browser.runtime.sendMessage({ type: "syncRepos" });
+        if (reply?.alreadyRunning) {
+          syncStatusEl!.textContent = "Sync already running";
+        } else if (reply?.error) {
+          syncStatusEl!.textContent = `Error: ${reply.error}`;
+        }
+      } catch (err) {
+        syncStatusEl!.textContent = `Error: ${err instanceof Error ? err.message : "Sync failed"}`;
       }
     });
   }
@@ -106,7 +110,7 @@ export async function initSearchTab(): Promise<void> {
   }
 }
 
-async function loadState() {
+async function loadRepos() {
   const repos = await storage.getRepos();
   allRepos = Object.values(repos);
 
@@ -123,8 +127,13 @@ async function loadState() {
       threshold: 0.3,
       includeScore: true,
     });
+  } else {
+    fuse = null;
   }
+}
 
+async function loadState() {
+  await loadRepos();
   await loadSyncStatus();
 }
 
@@ -156,10 +165,7 @@ function renderSyncStatus(status: SyncStatus) {
       fullSyncBtn.style.display = "";
       cancelSyncBtn.style.display = "none";
       syncStatusEl.textContent = `Synced ${status.synced} repos`;
-      loadState().then(() => {
-        const query = searchInput?.value.trim() ?? "";
-        performSearch(query);
-      });
+      refreshSearch();
       break;
 
     case "error":
@@ -172,12 +178,16 @@ function renderSyncStatus(status: SyncStatus) {
       fullSyncBtn.style.display = "";
       cancelSyncBtn.style.display = "none";
       syncStatusEl.textContent = `Cancelled. ${status.synced} repos synced.`;
-      loadState().then(() => {
-        const query = searchInput?.value.trim() ?? "";
-        performSearch(query);
-      });
+      refreshSearch();
       break;
   }
+}
+
+function refreshSearch() {
+  void loadRepos().then(() => {
+    const query = searchInput?.value.trim() ?? "";
+    performSearch(query);
+  });
 }
 
 function hideAllEmpty() {

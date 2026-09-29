@@ -269,16 +269,18 @@ export async function getAllListedRepoIds(
 ): Promise<Set<string>> {
   const repoIds = new Set<string>();
 
+  type ListNode = {
+    id: string;
+    items: {
+      nodes: Array<{ id: string } | null> | null;
+      pageInfo: { hasNextPage: boolean; endCursor: string | null };
+    } | null;
+  } | null;
+
   type ListsData = {
     viewer: {
       lists: {
-        nodes: Array<{
-          id: string;
-          items: {
-            nodes: Array<{ id: string } | null>;
-            pageInfo: { hasNextPage: boolean; endCursor: string | null };
-          };
-        }>;
+        nodes: Array<ListNode> | null;
       };
     };
   };
@@ -305,21 +307,23 @@ export async function getAllListedRepoIds(
   type ItemPageData = {
     node: {
       items: {
-        nodes: Array<{ id: string } | null>;
+        nodes: Array<{ id: string } | null> | null;
         pageInfo: { hasNextPage: boolean; endCursor: string | null };
       };
-    };
+    } | null;
   };
 
-  for (const list of data.viewer.lists.nodes) {
-    for (const node of list.items.nodes) {
+  for (const list of data.viewer.lists.nodes ?? []) {
+    for (const node of list?.items?.nodes ?? []) {
       if (node) repoIds.add(node.id);
     }
   }
 
-  let paginating = data.viewer.lists.nodes
-    .filter((l) => l.items.pageInfo.hasNextPage)
-    .map((l) => ({ id: l.id, cursor: l.items.pageInfo.endCursor! }));
+  let paginating = (data.viewer.lists.nodes ?? []).flatMap((list) => {
+    const endCursor = list?.items?.pageInfo.endCursor;
+    if (!list?.items?.pageInfo.hasNextPage || !endCursor) return [];
+    return [{ id: list.id, cursor: endCursor }];
+  });
 
   while (paginating.length > 0) {
     if (signal?.aborted) break;
@@ -346,8 +350,9 @@ export async function getAllListedRepoIds(
 
     const next: typeof paginating = [];
     for (let i = 0; i < results.length; i++) {
-      const ip = results[i].node.items;
-      for (const node of ip.nodes) {
+      const ip = results[i].node?.items;
+      if (!ip) continue;
+      for (const node of ip.nodes ?? []) {
         if (node) repoIds.add(node.id);
       }
       if (ip.pageInfo.hasNextPage && ip.pageInfo.endCursor) {
@@ -371,17 +376,19 @@ export async function getRepoListMap(
 ): Promise<Map<string, RepoListMembership>> {
   const memberships = new Map<string, RepoListMembership>();
 
+  type ListNode = {
+    id: string;
+    name: string;
+    items: {
+      nodes: Array<{ id: string } | null> | null;
+      pageInfo: { hasNextPage: boolean; endCursor: string | null };
+    } | null;
+  } | null;
+
   type ListsData = {
     viewer: {
       lists: {
-        nodes: Array<{
-          id: string;
-          name: string;
-          items: {
-            nodes: Array<{ id: string } | null>;
-            pageInfo: { hasNextPage: boolean; endCursor: string | null };
-          };
-        }>;
+        nodes: Array<ListNode> | null;
       };
     };
   };
@@ -409,27 +416,26 @@ export async function getRepoListMap(
   type ItemPageData = {
     node: {
       items: {
-        nodes: Array<{ id: string } | null>;
+        nodes: Array<{ id: string } | null> | null;
         pageInfo: { hasNextPage: boolean; endCursor: string | null };
       };
-    };
+    } | null;
   };
 
-  for (const list of data.viewer.lists.nodes) {
-    for (const node of list.items.nodes) {
+  for (const list of data.viewer.lists.nodes ?? []) {
+    if (!list) continue;
+    for (const node of list.items?.nodes ?? []) {
       if (node && !memberships.has(node.id)) {
         memberships.set(node.id, { listId: list.id, listName: list.name });
       }
     }
   }
 
-  let paginating = data.viewer.lists.nodes
-    .filter((l) => l.items.pageInfo.hasNextPage)
-    .map((l) => ({
-      id: l.id,
-      name: l.name,
-      cursor: l.items.pageInfo.endCursor!,
-    }));
+  let paginating = (data.viewer.lists.nodes ?? []).flatMap((list) => {
+    const endCursor = list?.items?.pageInfo.endCursor;
+    if (!list?.items?.pageInfo.hasNextPage || !endCursor) return [];
+    return [{ id: list.id, name: list.name, cursor: endCursor }];
+  });
 
   while (paginating.length > 0) {
     if (signal?.aborted) break;
@@ -456,8 +462,9 @@ export async function getRepoListMap(
 
     const next: typeof paginating = [];
     for (let i = 0; i < results.length; i++) {
-      const ip = results[i].node.items;
-      for (const node of ip.nodes) {
+      const ip = results[i].node?.items;
+      if (!ip) continue;
+      for (const node of ip.nodes ?? []) {
         if (node && !memberships.has(node.id)) {
           memberships.set(node.id, {
             listId: paginating[i].id,
@@ -513,74 +520,60 @@ export interface BatchCategorizeResult {
   errors: Array<{ repoName: string; error: string }>;
 }
 
-export async function* streamUncategorizedRepos(
-  token: string,
-  excludeNodeIds?: Set<string>,
-  signal?: AbortSignal,
-): AsyncGenerator<StarredRepoWithLists, void, unknown> {
-  let cursor: string | null = null;
-  let hasNextPage = true;
+interface StarredRepoNode {
+  id: string;
+  nameWithOwner: string;
+  description: string | null;
+  primaryLanguage: { name: string } | null;
+  repositoryTopics: {
+    nodes: Array<{ topic: { name: string } | null } | null> | null;
+  } | null;
+}
 
-  while (hasNextPage) {
-    type PageData = {
-      viewer: {
-        starredRepositories: {
-          pageInfo: { hasNextPage: boolean; endCursor: string | null };
-          nodes: Array<{
-            id: string;
-            nameWithOwner: string;
-            description: string | null;
-            primaryLanguage: { name: string } | null;
-            repositoryTopics: { nodes: Array<{ topic: { name: string } }> };
-          }>;
-        };
-      };
+interface StarredReposPage {
+  viewer: {
+    starredRepositories: {
+      pageInfo: { hasNextPage: boolean; endCursor: string | null };
+      nodes: Array<StarredRepoNode | null> | null;
     };
+  };
+}
 
-    const data: PageData = await graphqlRequest<PageData>(
-      token,
-      `query($cursor: String) {
-        viewer {
-          starredRepositories(first: ${GRAPHQL_PAGE_SIZE}, after: $cursor) {
-            pageInfo { hasNextPage endCursor }
-            nodes {
-              id
-              nameWithOwner
-              description
-              primaryLanguage { name }
-              repositoryTopics(first: 10) { nodes { topic { name } } }
-            }
-          }
-        }
-      }`,
-      cursor ? { cursor } : undefined,
-      signal,
-    );
-
-    const repos = data.viewer.starredRepositories;
-    hasNextPage = repos.pageInfo.hasNextPage;
-    cursor = repos.pageInfo.endCursor;
-
-    for (const node of repos.nodes) {
-      if (!excludeNodeIds || !excludeNodeIds.has(node.id)) {
-        const [owner, repo] = node.nameWithOwner.split("/");
-        yield {
-          nodeId: node.id,
-          nameWithOwner: node.nameWithOwner,
-          owner,
-          repo,
-          description: node.description || undefined,
-          language: node.primaryLanguage?.name || undefined,
-          topics: node.repositoryTopics.nodes.map(
-            (n: { topic: { name: string } }) => n.topic.name,
-          ),
-        };
+const STARRED_REPOS_QUERY = `query($cursor: String) {
+  viewer {
+    starredRepositories(first: ${GRAPHQL_PAGE_SIZE}, after: $cursor) {
+      pageInfo { hasNextPage endCursor }
+      nodes {
+        id
+        nameWithOwner
+        description
+        primaryLanguage { name }
+        repositoryTopics(first: 10) { nodes { topic { name } } }
       }
     }
   }
+}`;
+
+function toStarredRepo(node: StarredRepoNode): StarredRepoWithLists | null {
+  if (!node.nameWithOwner) return null;
+  const [owner, repo] = node.nameWithOwner.split("/");
+  const topics: string[] = [];
+  for (const entry of node.repositoryTopics?.nodes ?? []) {
+    const name = entry?.topic?.name;
+    if (name) topics.push(name);
+  }
+  return {
+    nodeId: node.id,
+    nameWithOwner: node.nameWithOwner,
+    owner,
+    repo,
+    description: node.description || undefined,
+    language: node.primaryLanguage?.name || undefined,
+    topics,
+  };
 }
 
-export async function* streamAllStarredRepos(
+async function* streamStarredRepos(
   token: string,
   signal?: AbortSignal,
 ): AsyncGenerator<StarredRepoWithLists, void, unknown> {
@@ -590,60 +583,41 @@ export async function* streamAllStarredRepos(
   while (hasNextPage) {
     if (signal?.aborted) break;
 
-    type PageData = {
-      viewer: {
-        starredRepositories: {
-          pageInfo: { hasNextPage: boolean; endCursor: string | null };
-          nodes: Array<{
-            id: string;
-            nameWithOwner: string;
-            description: string | null;
-            primaryLanguage: { name: string } | null;
-            repositoryTopics: { nodes: Array<{ topic: { name: string } }> };
-          }>;
-        };
-      };
-    };
-
-    const data: PageData = await graphqlRequest<PageData>(
+    const data: StarredReposPage = await graphqlRequest<StarredReposPage>(
       token,
-      `query($cursor: String) {
-        viewer {
-          starredRepositories(first: ${GRAPHQL_PAGE_SIZE}, after: $cursor) {
-            pageInfo { hasNextPage endCursor }
-            nodes {
-              id
-              nameWithOwner
-              description
-              primaryLanguage { name }
-              repositoryTopics(first: 10) { nodes { topic { name } } }
-            }
-          }
-        }
-      }`,
+      STARRED_REPOS_QUERY,
       cursor ? { cursor } : undefined,
       signal,
     );
 
-    const repos = data.viewer.starredRepositories;
+    const repos: StarredReposPage["viewer"]["starredRepositories"] =
+      data.viewer.starredRepositories;
     hasNextPage = repos.pageInfo.hasNextPage;
     cursor = repos.pageInfo.endCursor;
 
-    for (const node of repos.nodes) {
-      const [owner, repo] = node.nameWithOwner.split("/");
-      yield {
-        nodeId: node.id,
-        nameWithOwner: node.nameWithOwner,
-        owner,
-        repo,
-        description: node.description || undefined,
-        language: node.primaryLanguage?.name || undefined,
-        topics: node.repositoryTopics.nodes.map(
-          (n: { topic: { name: string } }) => n.topic.name,
-        ),
-      };
+    for (const node of repos.nodes ?? []) {
+      if (!node) continue;
+      const repo = toStarredRepo(node);
+      if (repo) yield repo;
     }
   }
+}
+
+export async function* streamUncategorizedRepos(
+  token: string,
+  excludeNodeIds?: Set<string>,
+  signal?: AbortSignal,
+): AsyncGenerator<StarredRepoWithLists, void, unknown> {
+  for await (const repo of streamStarredRepos(token, signal)) {
+    if (!excludeNodeIds || !excludeNodeIds.has(repo.nodeId)) yield repo;
+  }
+}
+
+export async function* streamAllStarredRepos(
+  token: string,
+  signal?: AbortSignal,
+): AsyncGenerator<StarredRepoWithLists, void, unknown> {
+  yield* streamStarredRepos(token, signal);
 }
 
 export async function batchCategorize(
