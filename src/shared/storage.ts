@@ -100,24 +100,15 @@ export class ExtensionStorage {
   }
 
   async saveRepo(record: RepoRecord): Promise<void> {
+    return this.saveRepos([record]);
+  }
+
+  async saveRepos(records: RepoRecord[]): Promise<void> {
+    if (records.length === 0) return;
     const repos = await this.getRepos();
-    // chrome.storage rejects `undefined`. Optional fields stay off the record
-    // until they have a value, which is what a first sync of an unlisted repo hits.
-    const stored: RepoRecord = {
-      owner: record.owner,
-      repo: record.repo,
-      fullName: record.fullName,
-      nodeId: record.nodeId,
-      topics: record.topics,
-      starredAt: record.starredAt,
-      updatedAt: record.updatedAt,
-    };
-    if (record.description !== undefined)
-      stored.description = record.description;
-    if (record.language !== undefined) stored.language = record.language;
-    if (record.listId !== undefined) stored.listId = record.listId;
-    if (record.listName !== undefined) stored.listName = record.listName;
-    repos[record.fullName] = stored;
+    for (const record of records) {
+      repos[record.fullName] = withoutUndefinedOptionals(record);
+    }
     await this.backend.set("repos", repos);
   }
 
@@ -221,6 +212,25 @@ function applyEnvOverrides(settings: ExtensionSettings): void {
   if (opencodeEndpoint === "zen" || opencodeEndpoint === "zen-go") {
     settings.providers.opencode.endpoint = opencodeEndpoint;
   }
+}
+
+// chrome.storage rejects `undefined`. Optional fields stay off the record
+// until they have a value, which is what a first sync of an unlisted repo hits.
+function withoutUndefinedOptionals(record: RepoRecord): RepoRecord {
+  const stored: RepoRecord = {
+    owner: record.owner,
+    repo: record.repo,
+    fullName: record.fullName,
+    nodeId: record.nodeId,
+    topics: record.topics,
+    starredAt: record.starredAt,
+    updatedAt: record.updatedAt,
+  };
+  if (record.description !== undefined) stored.description = record.description;
+  if (record.language !== undefined) stored.language = record.language;
+  if (record.listId !== undefined) stored.listId = record.listId;
+  if (record.listName !== undefined) stored.listName = record.listName;
+  return stored;
 }
 
 export const storage = new ExtensionStorage();

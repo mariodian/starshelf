@@ -7,7 +7,11 @@ import type {
   SyncStatus,
   SyncProgressMessage,
 } from "@/shared/types/messages";
-import { storage, type ExtensionSettings } from "@/shared/storage";
+import {
+  storage,
+  type ExtensionSettings,
+  type RepoRecord,
+} from "@/shared/storage";
 import {
   fetchRepoMetadata,
   isRepoPage,
@@ -21,6 +25,7 @@ import {
   starRepository,
   streamAllStarredRepos,
   getRepoListMap,
+  GRAPHQL_PAGE_SIZE,
   assignRepoToList,
   type GitHubList,
 } from "@/shared/github-lists";
@@ -625,6 +630,14 @@ const syncJob = createJob<SyncStatus>({
     await publish({ state: "running", synced: 0 });
 
     let synced = 0;
+    const pending: RepoRecord[] = [];
+    const flushPending = async () => {
+      if (pending.length === 0) return;
+      const page = pending.slice();
+      await storage.saveRepos(page);
+      pending.length = 0;
+    };
+
     try {
       await publish({
         state: "running",
@@ -632,13 +645,14 @@ const syncJob = createJob<SyncStatus>({
         message: "Fetching repo lists...",
       });
       const listMap = await getRepoListMap(token, signal);
+      const existing = await storage.getRepos();
 
       for await (const repo of streamAllStarredRepos(token, signal)) {
         if (signal.aborted) break;
 
         const membership = listMap.get(repo.nodeId);
         const now = new Date().toISOString();
-        await storage.saveRepo({
+        pending.push({
           owner: repo.owner,
           repo: repo.repo,
           fullName: repo.nameWithOwner,
@@ -648,7 +662,7 @@ const syncJob = createJob<SyncStatus>({
           topics: repo.topics,
           listId: membership?.listId,
           listName: membership?.listName,
-          starredAt: now,
+          starredAt: existing[repo.nameWithOwner]?.starredAt ?? now,
           updatedAt: now,
         });
 
@@ -658,7 +672,13 @@ const syncJob = createJob<SyncStatus>({
           synced,
           message: `Syncing ${repo.nameWithOwner}...`,
         });
+
+        if (pending.length >= GRAPHQL_PAGE_SIZE) {
+          await flushPending();
+        }
       }
+
+      await flushPending();
 
       await publish(
         signal.aborted
@@ -674,6 +694,12 @@ const syncJob = createJob<SyncStatus>({
             },
       );
     } catch (err) {
+      try {
+        await flushPending();
+      } catch (flushErr) {
+        logger.error("[sync] bg | flush failed:", flushErr);
+      }
+
       if (
         signal.aborted ||
         (err instanceof Error && err.name === "AbortError")

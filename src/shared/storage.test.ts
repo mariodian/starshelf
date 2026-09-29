@@ -238,6 +238,38 @@ describe("ExtensionStorage", () => {
       });
     });
 
+    it("saveRepos writes every record in one read", async () => {
+      const { storage } = await import("@/shared/storage");
+      await storage.saveRepos([
+        {
+          owner: "a",
+          repo: "b",
+          fullName: "a/b",
+          nodeId: "n1",
+          topics: [],
+          starredAt: "2024-01-01T00:00:00Z",
+          updatedAt: "2024-01-02T00:00:00Z",
+        },
+        {
+          owner: "c",
+          repo: "d",
+          fullName: "c/d",
+          nodeId: "n2",
+          topics: [],
+          description: undefined,
+          listId: undefined,
+          starredAt: "2024-03-01T00:00:00Z",
+          updatedAt: "2024-03-01T00:00:00Z",
+        },
+      ]);
+
+      const repos = await storage.getRepos();
+      expect(repos["a/b"].starredAt).toBe("2024-01-01T00:00:00Z");
+      expect(repos["c/d"].description).toBeUndefined();
+      expect(repos["c/d"].listId).toBeUndefined();
+      expect(Object.keys(repos)).toEqual(["a/b", "c/d"]);
+    });
+
     it("saveRepo updates an existing record", async () => {
       const { storage } = await import("@/shared/storage");
       const record = {
