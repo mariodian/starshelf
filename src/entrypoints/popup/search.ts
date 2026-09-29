@@ -108,6 +108,15 @@ export async function initSearchTab(): Promise<void> {
     });
     searchInput.focus();
   }
+
+  // Dia closes the action popup before anchor navigation runs.
+  searchResults?.addEventListener("click", (event) => {
+    if (!(event.target instanceof Element)) return;
+    const anchor = event.target.closest("a.result-name");
+    if (!(anchor instanceof HTMLAnchorElement) || !anchor.href) return;
+    event.preventDefault();
+    void browser.tabs.create({ url: anchor.href });
+  });
 }
 
 async function loadRepos() {
@@ -283,7 +292,7 @@ function performSearch(query: string) {
 
       html += `<div class="search-result">
         <div class="result-header">
-          <a href="https://github.com/${escapeHtml(item.fullName)}" target="_blank" class="result-name">${escapeHtml(item.fullName)}</a>
+          <a href="https://github.com/${escapeHtml(item.fullName)}" class="result-name">${escapeHtml(item.fullName)}</a>
           ${meta}
         </div>
         ${desc}${topics}
