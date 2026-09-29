@@ -72,24 +72,6 @@ export default defineBackground(() => {
 
 const inFlight = new Set<string>();
 
-async function withErrorHandling<T>(
-  operation: () => Promise<T>,
-  tabId: number,
-  owner: string,
-  repo: string,
-  context: string,
-  logPrefix: string,
-): Promise<T | null> {
-  try {
-    return await operation();
-  } catch (err) {
-    logger.error(`${logPrefix} | ${context} FAILED:`, err);
-    const msg = err instanceof Error ? err.message : `${context} failed`;
-    await sendStatus(tabId, owner, repo, "error", undefined, msg);
-    return null;
-  }
-}
-
 async function categorizeAndAssign(
   tabId: number,
   owner: string,
@@ -105,55 +87,33 @@ async function categorizeAndAssign(
   category: string;
   listId: string;
   listName: string;
-} | null> {
+}> {
   const existingNames = lists.map((l) => l.name);
 
-  const category = await withErrorHandling(
-    async () => {
-      const cat = await client.categorize({
-        metadata,
-        owner,
-        repo,
-        existingLists: existingNames,
-        style: {
-          enableEmojis: settings.enableEmojis,
-          enableCategoryPrefix: settings.enableCategoryPrefix,
-          autoFormat: settings.autoFormat,
-        },
-        previousCategories: previousCategories ?? [],
-      });
-      logger.log("[stars] bg | AI result:", cat);
-      return cat;
-    },
-    tabId,
+  const category = await client.categorize({
+    metadata,
     owner,
     repo,
-    "AI categorize",
-    "[stars] bg",
-  );
-  if (category === null) return null;
+    existingLists: existingNames,
+    style: {
+      enableEmojis: settings.enableEmojis,
+      enableCategoryPrefix: settings.enableCategoryPrefix,
+      autoFormat: settings.autoFormat,
+    },
+    previousCategories: previousCategories ?? [],
+  });
+  logger.log("[stars] bg | AI result:", category);
 
-  const assigned = await withErrorHandling(
-    async () => {
-      const result = await assignRepoToList(repoNodeId, category, {
-        token,
-        listPrivacy: settings.listPrivacy,
-        lists,
-      });
-      logger.log(
-        "[stars] bg | assignRepoToList:",
-        result.created ? "created" : "matched",
-        result.list.name,
-      );
-      return result;
-    },
-    tabId,
-    owner,
-    repo,
-    "assign to list",
-    "[stars] bg",
+  const assigned = await assignRepoToList(repoNodeId, category, {
+    token,
+    listPrivacy: settings.listPrivacy,
+    lists,
+  });
+  logger.log(
+    "[stars] bg | assignRepoToList:",
+    assigned.created ? "created" : "matched",
+    assigned.list.name,
   );
-  if (assigned === null) return null;
 
   await sendStatus(tabId, owner, repo, "saved", assigned.list.name);
   return {
@@ -205,58 +165,22 @@ async function handleStarClick(
     // Star
     await sendStatus(tabId, owner, repo, "categorizing");
 
-    // Validate token scope
-    const tokenOk = await withErrorHandling(
-      async () => {
-        logger.log("[stars] bg | validating token...");
-        await validateToken(token);
-        logger.log("[stars] bg | token valid");
-        return true;
-      },
-      tabId,
-      owner,
-      repo,
-      "token validation",
-      "[stars] bg",
-    );
-    if (tokenOk === null) return;
+    logger.log("[stars] bg | validating token...");
+    await validateToken(token);
+    logger.log("[stars] bg | token valid");
 
-    // Fetch repo metadata
-    const metadata = await withErrorHandling(
-      async () => {
-        logger.log("[stars] bg | fetchRepoMetadata...");
-        const meta = await fetchRepoMetadata(owner, repo, token);
-        logger.log(
-          "[stars] bg | metadata:",
-          meta.language,
-          meta.topics?.length,
-          "topics",
-        );
-        return meta;
-      },
-      tabId,
-      owner,
-      repo,
-      "fetchRepoMetadata",
-      "[stars] bg",
+    logger.log("[stars] bg | fetchRepoMetadata...");
+    const metadata = await fetchRepoMetadata(owner, repo, token);
+    logger.log(
+      "[stars] bg | metadata:",
+      metadata.language,
+      metadata.topics?.length,
+      "topics",
     );
-    if (metadata === null) return;
 
-    // Get viewer lists
-    const lists = await withErrorHandling(
-      async () => {
-        logger.log("[stars] bg | getViewerLists...");
-        const result = await getViewerLists(token);
-        logger.log("[stars] bg | lists:", result.length);
-        return result;
-      },
-      tabId,
-      owner,
-      repo,
-      "getViewerLists",
-      "[stars] bg",
-    );
-    if (lists === null) return;
+    logger.log("[stars] bg | getViewerLists...");
+    const lists = await getViewerLists(token);
+    logger.log("[stars] bg | lists:", lists.length);
 
     const client = createProviderClient(
       settings.activeProvider,
@@ -274,24 +198,11 @@ async function handleStarClick(
       return;
     }
 
-    // Resolve repo node ID and ensure it's starred before list operations
-    const repoNodeId = await withErrorHandling(
-      async () => {
-        logger.log("[stars] bg | getRepoNodeId...");
-        const id = await getRepoNodeId(owner, repo, token);
-        logger.log("[stars] bg | starRepository...");
-        await starRepository(id, token);
-        return id;
-      },
-      tabId,
-      owner,
-      repo,
-      "star operation",
-      "[stars] bg",
-    );
-    if (repoNodeId === null) return;
+    logger.log("[stars] bg | getRepoNodeId...");
+    const repoNodeId = await getRepoNodeId(owner, repo, token);
+    logger.log("[stars] bg | starRepository...");
+    await starRepository(repoNodeId, token);
 
-    // AI categorize
     logger.log(
       "[stars] bg | AI categorize | provider:",
       settings.activeProvider,
@@ -309,24 +220,22 @@ async function handleStarClick(
       metadata,
       lists,
     );
-    if (result) {
-      const now = new Date().toISOString();
-      await storage.saveRepo({
-        owner,
-        repo,
-        fullName,
-        nodeId: repoNodeId,
-        description: metadata.description,
-        language: metadata.language,
-        topics: metadata.topics,
-        listId: result.listId,
-        listName: result.listName,
-        starredAt: now,
-        updatedAt: now,
-      });
-    }
+    const now = new Date().toISOString();
+    await storage.saveRepo({
+      owner,
+      repo,
+      fullName,
+      nodeId: repoNodeId,
+      description: metadata.description,
+      language: metadata.language,
+      topics: metadata.topics,
+      listId: result.listId,
+      listName: result.listName,
+      starredAt: now,
+      updatedAt: now,
+    });
   } catch (err) {
-    logger.error("Extension error:", err);
+    logger.error("[stars] bg | failed:", err);
     const msg = err instanceof Error ? err.message : "Unexpected error";
     await sendStatus(tabId, owner, repo, "error", undefined, msg);
   } finally {
@@ -399,31 +308,10 @@ async function handleRegenerate(
       return;
     }
 
-    // Remove repo from current lists (pass empty listIds to clear all lists)
-    const removeOk = await withErrorHandling(
-      async () => {
-        logger.log("[regenerate] bg | removing from list:", record.listName);
-        await updateUserListsForItem(record.nodeId, [], token);
-        return true;
-      },
-      tabId,
-      owner,
-      repo,
-      "remove from list",
-      "[regenerate] bg",
-    );
-    if (removeOk === null) return;
+    logger.log("[regenerate] bg | removing from list:", record.listName);
+    await updateUserListsForItem(record.nodeId, [], token);
 
-    // Get viewer lists (to re-match)
-    const lists = await withErrorHandling(
-      () => getViewerLists(token),
-      tabId,
-      owner,
-      repo,
-      "getViewerLists",
-      "[regenerate] bg",
-    );
-    if (lists === null) return;
+    const lists = await getViewerLists(token);
 
     const allRejected = [currentCategory, ...previousCategories];
     logger.log("[regenerate] bg | AI categorize | rejected:", allRejected);
@@ -445,16 +333,14 @@ async function handleRegenerate(
       lists,
       allRejected,
     );
-    if (result) {
-      await storage.saveRepo({
-        ...record,
-        listId: result.listId,
-        listName: result.listName,
-        updatedAt: new Date().toISOString(),
-      });
-    }
+    await storage.saveRepo({
+      ...record,
+      listId: result.listId,
+      listName: result.listName,
+      updatedAt: new Date().toISOString(),
+    });
   } catch (err) {
-    logger.error("[regenerate] Error:", err);
+    logger.error("[regenerate] bg | failed:", err);
     const msg = err instanceof Error ? err.message : "Unexpected error";
     await sendStatus(tabId, owner, repo, "error", undefined, msg);
   } finally {
