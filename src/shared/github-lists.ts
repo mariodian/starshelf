@@ -554,8 +554,7 @@ const STARRED_REPOS_QUERY = `query($cursor: String) {
   }
 }`;
 
-function toStarredRepo(node: StarredRepoNode): StarredRepoWithLists | null {
-  if (!node.nameWithOwner) return null;
+function toStarredRepo(node: StarredRepoNode): StarredRepoWithLists {
   const [owner, repo] = node.nameWithOwner.split("/");
   const topics: string[] = [];
   for (const entry of node.repositoryTopics?.nodes ?? []) {
@@ -597,8 +596,7 @@ export async function* streamAllStarredRepos(
 
     for (const node of repos.nodes ?? []) {
       if (!node) continue;
-      const repo = toStarredRepo(node);
-      if (repo) yield repo;
+      yield toStarredRepo(node);
     }
   }
 }
