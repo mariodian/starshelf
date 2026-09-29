@@ -92,8 +92,7 @@ Shared modules live in `src/shared/`:
 | `providers/base.ts`      | `AiProviderClient` interface                          |
 | `providers/factory.ts`   | Provider client factory                               |
 | `providers/anthropic.ts` | Anthropic Messages API                                |
-| `providers/openai.ts`    | OpenAI Chat Completions + model listing               |
-| `providers/opencode.ts`  | OpenCode Zen / Go (OpenAI-compatible)                 |
+| `providers/chat.ts`      | OpenAI-compatible chat client (OpenAI and OpenCode)   |
 
 ### Flow
 

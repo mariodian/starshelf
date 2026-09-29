@@ -36,7 +36,7 @@ Starshelf is a **browser extension** built with [WXT](https://wxt.dev) (which wr
 | Module | Purpose |
 |---|---|
 | `github.ts` | `parseRepoFromUrl()`, `isRepoPage()`, `fetchRepoMetadata()` (REST API for description/language + separate topics endpoint with `mercy-preview` header), `checkStarStatus()` |
-| `github-lists.ts` | All GitHub GraphQL operations: `validateToken`, `getViewerLists`, `createUserList`, `getRepoNodeId`, `updateUserListsForItem`, `starRepository`, `deleteUserList`, `getAllListedRepoIds`, `batchCategorize`. Also `fuzzyMatchListName()` for normalized name matching and `streamUncategorizedRepos()` async generator for batch operations. |
+| `github-lists.ts` | GitHub GraphQL operations plus `ListCatalog` (match-or-create lists). `batch-categorize.ts` runs the batch job. |
 | `storage.ts` | `ExtensionSettings` interface + `ExtensionStorage` class wrapping `browser.storage.local`. Includes `bootstrap()` for env-based seeded settings and dev-only env overrides via `VITE_*` vars. |
 | `types/messages.ts` | Typed message protocol — union types `ContentMessage`, `PopupMessage`, `BackgroundMessage`, `RuntimeMessage`. All message-passing uses these types. |
 | `logger.ts` | Dev-only console logging (no-ops in production). |
@@ -46,8 +46,8 @@ Starshelf is a **browser extension** built with [WXT](https://wxt.dev) (which wr
 ### Provider System (`src/shared/providers/`)
 
 - `base.ts` defines `AiProviderClient` interface (`categorize()`, `categorizeBatch()`, `listModels()`) + `buildPrompt()` / `buildBatchPrompt()` / `cleanCategory()` / `parseBatchResponse()`
-- `factory.ts` creates the right client via `createProviderClient(provider, config)`
-- Concrete providers: `anthropic.ts` (Messages API), `openai.ts` (Chat Completions), `opencode.ts` (OpenAI-compatible at `opencode.ai/{zen,go}/v1`)
+- `factory.ts` creates the right client via `createProviderClient(provider, providers)`
+- Concrete providers: `anthropic.ts` (Messages API), `chat.ts` (`ChatCompletionsClient` for OpenAI and OpenCode Zen / Go)
 
 ### Key Design Patterns
 
