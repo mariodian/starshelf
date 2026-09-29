@@ -269,13 +269,15 @@ interface ListedRepo {
   listName: string;
 }
 
+type ListItems = {
+  nodes: Array<{ id: string } | null> | null;
+  pageInfo: { hasNextPage: boolean; endCursor: string | null };
+};
+
 type ListNode = {
   id: string;
   name: string;
-  items: {
-    nodes: Array<{ id: string } | null> | null;
-    pageInfo: { hasNextPage: boolean; endCursor: string | null };
-  } | null;
+  items: ListItems | null;
 } | null;
 
 type ListsData = {
@@ -288,14 +290,24 @@ type ListsData = {
 
 type ItemPageData = {
   node: {
-    items: {
-      nodes: Array<{ id: string } | null> | null;
-      pageInfo: { hasNextPage: boolean; endCursor: string | null };
-    };
+    items: ListItems;
   } | null;
 };
 
 type ListPageCursor = { id: string; name: string; cursor: string };
+
+function* listedReposOnPage(
+  list: { id: string; name: string },
+  items: ListItems,
+): Generator<ListedRepo, ListPageCursor | null> {
+  for (const node of items.nodes ?? []) {
+    if (!node) continue;
+    yield { repoId: node.id, listId: list.id, listName: list.name };
+  }
+  const { hasNextPage, endCursor } = items.pageInfo;
+  if (!hasNextPage || !endCursor) return null;
+  return { id: list.id, name: list.name, cursor: endCursor };
+}
 
 async function* streamListedRepos(
   token: string,
@@ -324,14 +336,8 @@ async function* streamListedRepos(
   let paginating: ListPageCursor[] = [];
   for (const list of data.viewer.lists.nodes ?? []) {
     if (!list?.items) continue;
-    for (const node of list.items.nodes ?? []) {
-      if (!node) continue;
-      yield { repoId: node.id, listId: list.id, listName: list.name };
-    }
-    const { hasNextPage, endCursor } = list.items.pageInfo;
-    if (hasNextPage && endCursor) {
-      paginating.push({ id: list.id, name: list.name, cursor: endCursor });
-    }
+    const cursor = yield* listedReposOnPage(list, list.items);
+    if (cursor) paginating.push(cursor);
   }
 
   while (paginating.length > 0) {
@@ -359,20 +365,10 @@ async function* streamListedRepos(
 
     const next: ListPageCursor[] = [];
     for (let i = 0; i < results.length; i++) {
-      const ip = results[i].node?.items;
-      if (!ip) continue;
-      const list = paginating[i];
-      for (const node of ip.nodes ?? []) {
-        if (!node) continue;
-        yield { repoId: node.id, listId: list.id, listName: list.name };
-      }
-      if (ip.pageInfo.hasNextPage && ip.pageInfo.endCursor) {
-        next.push({
-          id: list.id,
-          name: list.name,
-          cursor: ip.pageInfo.endCursor,
-        });
-      }
+      const items = results[i].node?.items;
+      if (!items) continue;
+      const cursor = yield* listedReposOnPage(paginating[i], items);
+      if (cursor) next.push(cursor);
     }
     paginating = next;
   }
