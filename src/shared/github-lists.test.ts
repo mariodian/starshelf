@@ -16,6 +16,8 @@ import {
   streamUncategorizedRepos,
   streamAllStarredRepos,
   batchCategorize,
+  assignRepoToList,
+  type GitHubList,
 } from "@/shared/github-lists";
 import type { AiProviderClient } from "@/shared/providers/base";
 
@@ -1223,5 +1225,73 @@ describe("streamAllStarredRepos", () => {
     }
 
     expect(results).toHaveLength(0);
+  });
+});
+
+describe("assignRepoToList", () => {
+  it("adds the repo to an existing list and does not create one", async () => {
+    const fetchMock = vi.fn(graphqlDispatcher({}));
+    vi.stubGlobal("fetch", fetchMock);
+    const lists = [{ id: "L1", name: "CLI Tools", isPrivate: true }];
+
+    const result = await assignRepoToList("R1", "cli tools", {
+      token: "token",
+      listPrivacy: "private",
+      lists,
+    });
+
+    expect(result).toEqual({
+      list: { id: "L1", name: "CLI Tools", isPrivate: true },
+      created: false,
+    });
+    expect(lists).toHaveLength(1);
+    const queries = fetchMock.mock.calls.map(
+      (call) =>
+        JSON.parse((call[1] as RequestInit).body as string).query as string,
+    );
+    expect(queries.some((q) => q.includes("createUserList"))).toBe(false);
+    expect(queries.some((q) => q.includes("updateUserListsForItem"))).toBe(
+      true,
+    );
+  });
+
+  it("creates a list once when two calls race on the same new name", async () => {
+    let creates = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (...args: unknown[]) => {
+        const init = args[1] as RequestInit;
+        const query = JSON.parse((init.body as string) || "{}").query as string;
+        if (query.includes("createUserList")) {
+          creates++;
+          await new Promise((resolve) => setTimeout(resolve, 10));
+          return mockGraphqlResponse({
+            createUserList: {
+              list: { id: "L2", name: "CLI Tools", isPrivate: true },
+            },
+          });
+        }
+        return mockGraphqlResponse({
+          updateUserListsForItem: { clientMutationId: null },
+        });
+      }),
+    );
+    const lists: GitHubList[] = [];
+    const options = {
+      token: "token",
+      listPrivacy: "private" as const,
+      lists,
+    };
+
+    const [a, b] = await Promise.all([
+      assignRepoToList("R1", "CLI Tools", options),
+      assignRepoToList("R2", "cli  tools", options),
+    ]);
+
+    expect(creates).toBe(1);
+    expect(lists).toEqual([{ id: "L2", name: "CLI Tools", isPrivate: true }]);
+    expect([a.created, b.created].filter(Boolean)).toHaveLength(1);
+    expect(a.list.id).toBe("L2");
+    expect(b.list.id).toBe("L2");
   });
 });

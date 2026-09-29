@@ -16,15 +16,14 @@ import {
 import {
   validateToken,
   getViewerLists,
-  createUserList,
   getRepoNodeId,
   updateUserListsForItem,
-  fuzzyMatchListName,
   starRepository,
   deleteUserList,
   batchCategorize,
   streamAllStarredRepos,
   getRepoListMap,
+  assignRepoToList,
   type GitHubList,
 } from "@/shared/github-lists";
 import type { AiProviderClient } from "@/shared/providers/base";
@@ -139,61 +138,34 @@ async function categorizeAndAssign(
   );
   if (category === null) return null;
 
-  const matchedList = fuzzyMatchListName(category, lists);
-  logger.log(
-    "[stars] bg | fuzzy match:",
-    matchedList ? matchedList.name : "none",
-  );
-
-  if (matchedList) {
-    const ok = await withErrorHandling(
-      async () => {
-        logger.log("[stars] bg | updateUserListsForItem...");
-        await updateUserListsForItem(repoNodeId, [matchedList.id], token);
-        logger.log("[stars] bg | added to list:", matchedList.name);
-        return true;
-      },
-      tabId,
-      owner,
-      repo,
-      "add to list",
-      "[stars] bg",
-    );
-    if (ok === null) return null;
-
-    await sendStatus(tabId, owner, repo, "saved", matchedList.name);
-    return {
-      category,
-      listId: matchedList.id,
-      listName: matchedList.name,
-      isNewList: false,
-    };
-  }
-
-  const newList = await withErrorHandling(
+  const assigned = await withErrorHandling(
     async () => {
-      const isPrivate = settings.listPrivacy === "private";
-      logger.log("[stars] bg | createUserList:", category);
-      const list = await createUserList(category, isPrivate, token);
-      logger.log("[stars] bg | updateUserListsForItem...");
-      await updateUserListsForItem(repoNodeId, [list.id], token);
-      logger.log("[stars] bg | created+added to list:", list.name);
-      return list;
+      const result = await assignRepoToList(repoNodeId, category, {
+        token,
+        listPrivacy: settings.listPrivacy,
+        lists,
+      });
+      logger.log(
+        "[stars] bg | assignRepoToList:",
+        result.created ? "created" : "matched",
+        result.list.name,
+      );
+      return result;
     },
     tabId,
     owner,
     repo,
-    "create list",
+    "assign to list",
     "[stars] bg",
   );
-  if (newList === null) return null;
+  if (assigned === null) return null;
 
-  await sendStatus(tabId, owner, repo, "saved", category);
+  await sendStatus(tabId, owner, repo, "saved", assigned.list.name);
   return {
     category,
-    listId: newList.id,
-    listName: newList.name,
-    isNewList: true,
+    listId: assigned.list.id,
+    listName: assigned.list.name,
+    isNewList: assigned.created,
   };
 }
 

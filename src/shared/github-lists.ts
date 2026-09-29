@@ -220,6 +220,63 @@ export function fuzzyMatchListName(
   return null;
 }
 
+export interface AssignRepoResult {
+  list: GitHubList;
+  /** True only for the call that invoked createUserList. */
+  created: boolean;
+}
+
+const inflightCreates = new Map<string, Promise<GitHubList>>();
+
+export async function assignRepoToList(
+  repoNodeId: string,
+  category: string,
+  options: {
+    token: string;
+    listPrivacy: "public" | "private";
+    /** Newly created lists are pushed onto this array before the promise resolves. */
+    lists: GitHubList[];
+    signal?: AbortSignal;
+  },
+): Promise<AssignRepoResult> {
+  const { token, lists, signal } = options;
+  const key = normalizeListName(category);
+  const matched = lists.find((list) => normalizeListName(list.name) === key);
+  if (matched) {
+    if (!signal?.aborted) {
+      await updateUserListsForItem(repoNodeId, [matched.id], token, signal);
+    }
+    return { list: matched, created: false };
+  }
+
+  let created = false;
+  let pending = inflightCreates.get(key);
+  if (!pending) {
+    created = true;
+    pending = createUserList(
+      category,
+      options.listPrivacy === "private",
+      token,
+      signal,
+    ).then((list) => {
+      lists.push(list);
+      return list;
+    });
+    inflightCreates.set(key, pending);
+    pending.finally(() => {
+      if (inflightCreates.get(key) === pending) {
+        inflightCreates.delete(key);
+      }
+    });
+  }
+
+  const list = await pending;
+  if (!signal?.aborted) {
+    await updateUserListsForItem(repoNodeId, [list.id], token, signal);
+  }
+  return { list, created };
+}
+
 function delay(ms: number, signal?: AbortSignal): Promise<void> {
   return new Promise((resolve) => {
     if (signal?.aborted) {
@@ -543,11 +600,6 @@ export async function batchCategorize(
     const lists = await getViewerLists(token, signal);
     const existingNames = lists.map((l) => l.name);
 
-    const normalizedLists = new Map<string, GitHubList>();
-    for (const list of lists) {
-      normalizedLists.set(normalizeListName(list.name), list);
-    }
-
     const listedIds =
       lists.length > 0
         ? await (async () => {
@@ -562,29 +614,16 @@ export async function batchCategorize(
       repo: StarredRepoWithLists,
       category: string,
     ): Promise<void> {
-      let listId: string;
-      const normName = normalizeListName(category);
-      const matchedList = normalizedLists.get(normName);
-
-      if (matchedList) {
-        listId = matchedList.id;
-      } else {
-        const isPrivate = settings.listPrivacy === "private";
-        const newList = await createUserList(
-          category,
-          isPrivate,
-          token,
-          signal,
-        );
-        lists.push(newList);
-        existingNames.push(newList.name);
-        normalizedLists.set(normalizeListName(newList.name), newList);
-        listId = newList.id;
-      }
+      const { list, created } = await assignRepoToList(repo.nodeId, category, {
+        token,
+        listPrivacy: settings.listPrivacy,
+        lists,
+        signal,
+      });
+      if (created) existingNames.push(list.name);
 
       if (signal?.aborted) return;
 
-      await updateUserListsForItem(repo.nodeId, [listId], token, signal);
       categorized++;
       await onProgress?.(categorized, repo.nameWithOwner);
     }
