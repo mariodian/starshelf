@@ -19,7 +19,6 @@ import {
   getRepoNodeId,
   updateUserListsForItem,
   starRepository,
-  deleteUserList,
   streamAllStarredRepos,
   getRepoListMap,
   assignRepoToList,
@@ -68,16 +67,6 @@ export default defineBackground(() => {
 
 const inFlight = new Set<string>();
 
-interface StarcorderState {
-  metadata: RepoMetadata;
-  repoNodeId: string;
-  listId: string;
-  listName: string;
-  isNewList: boolean;
-}
-
-const states = new Map<string, StarcorderState>();
-
 async function withErrorHandling<T>(
   operation: () => Promise<T>,
   tabId: number,
@@ -111,7 +100,6 @@ async function categorizeAndAssign(
   category: string;
   listId: string;
   listName: string;
-  isNewList: boolean;
 } | null> {
   const existingNames = lists.map((l) => l.name);
 
@@ -165,7 +153,6 @@ async function categorizeAndAssign(
     category,
     listId: assigned.list.id,
     listName: assigned.list.name,
-    isNewList: assigned.created,
   };
 }
 
@@ -316,14 +303,6 @@ async function handleStarClick(
       lists,
     );
     if (result) {
-      states.set(fullName, {
-        metadata,
-        repoNodeId,
-        listId: result.listId,
-        listName: result.listName,
-        isNewList: result.isNewList,
-      });
-
       const now = new Date().toISOString();
       await storage.saveRepo({
         owner,
@@ -366,15 +345,16 @@ async function handleRegenerate(
   inFlight.add(fullName);
 
   try {
-    const prevState = states.get(fullName);
-    if (!prevState) {
+    const repos = await storage.getRepos();
+    const record = repos[fullName];
+    if (!record) {
       await sendStatus(
         tabId,
         owner,
         repo,
         "error",
         undefined,
-        "Cannot find saved state to regenerate",
+        "Star this repo again so Starshelf can regenerate it.",
       );
       return;
     }
@@ -412,11 +392,11 @@ async function handleRegenerate(
       return;
     }
 
-    // Remove repo from current list (pass empty listIds to clear all lists)
+    // Remove repo from current lists (pass empty listIds to clear all lists)
     const removeOk = await withErrorHandling(
       async () => {
-        logger.log("[regenerate] bg | removing from list:", prevState.listName);
-        await updateUserListsForItem(prevState.repoNodeId, [], token);
+        logger.log("[regenerate] bg | removing from list:", record.listName);
+        await updateUserListsForItem(record.nodeId, [], token);
         return true;
       },
       tabId,
@@ -426,26 +406,6 @@ async function handleRegenerate(
       "[regenerate] bg",
     );
     if (removeOk === null) return;
-
-    // Delete the list if it was created by this star action
-    if (prevState.isNewList) {
-      const deleteOk = await withErrorHandling(
-        async () => {
-          logger.log(
-            "[regenerate] bg | deleting empty list:",
-            prevState.listName,
-          );
-          await deleteUserList(prevState.listId, token);
-          return true;
-        },
-        tabId,
-        owner,
-        repo,
-        "delete list",
-        "[regenerate] bg",
-      );
-      if (deleteOk === null) return;
-    }
 
     // Get viewer lists (to re-match)
     const lists = await withErrorHandling(
@@ -461,6 +421,11 @@ async function handleRegenerate(
     const allRejected = [currentCategory, ...previousCategories];
     logger.log("[regenerate] bg | AI categorize | rejected:", allRejected);
 
+    const metadata: RepoMetadata = {
+      description: record.description,
+      language: record.language,
+      topics: record.topics,
+    };
     const result = await categorizeAndAssign(
       tabId,
       owner,
@@ -468,17 +433,17 @@ async function handleRegenerate(
       token,
       settings,
       client,
-      prevState.repoNodeId,
-      prevState.metadata,
+      record.nodeId,
+      metadata,
       lists,
       allRejected,
     );
     if (result) {
-      states.set(fullName, {
-        ...prevState,
+      await storage.saveRepo({
+        ...record,
         listId: result.listId,
         listName: result.listName,
-        isNewList: result.isNewList,
+        updatedAt: new Date().toISOString(),
       });
     }
   } catch (err) {
