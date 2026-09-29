@@ -151,7 +151,7 @@ function wire() {
   });
 
   el.deleteApiKey.addEventListener("click", async () => {
-    setProviderConfig(settings.activeProvider, { apiKey: undefined });
+    setProviderConfig({ apiKey: undefined });
     await storage.set("providers", settings.providers);
     el.apiKey.value = "";
     flash("API key deleted");
@@ -187,7 +187,7 @@ function wire() {
 
   el.modelSelect.addEventListener("change", () => {
     if (isRendering) return;
-    setProviderConfig(settings.activeProvider, {
+    setProviderConfig({
       model: el.modelSelect.value || undefined,
     });
     storage.set("providers", settings.providers);
@@ -302,12 +302,12 @@ function saveApiKey() {
   const el = getElements();
   const val = el.apiKey.value;
   if (val && val !== DIRTY_MASK) {
-    setProviderConfig(settings.activeProvider, { apiKey: val });
+    setProviderConfig({ apiKey: val });
     storage
       .set("providers", settings.providers)
       .then(() => flash("API key saved"));
   } else if (val === "" && settings.providers[settings.activeProvider].apiKey) {
-    setProviderConfig(settings.activeProvider, { apiKey: undefined });
+    setProviderConfig({ apiKey: undefined });
     storage
       .set("providers", settings.providers)
       .then(() => flash("API key removed"));
@@ -368,26 +368,13 @@ function render() {
 }
 
 function setProviderConfig(
-  provider: ExtensionSettings["activeProvider"],
-  update: Record<string, string | undefined>,
-) {
-  switch (provider) {
-    case "anthropic":
-      settings.providers.anthropic = {
-        ...settings.providers.anthropic,
-        ...update,
-      };
-      break;
-    case "openai":
-      settings.providers.openai = { ...settings.providers.openai, ...update };
-      break;
-    case "opencode":
-      settings.providers.opencode = {
-        ...settings.providers.opencode,
-        ...update,
-      };
-      break;
-  }
+  update: Partial<{ apiKey: string; model: string }>,
+): void {
+  const provider = settings.activeProvider;
+  const current = settings.providers[provider];
+  // Spread loses `endpoint` on the provider union, so copy fields onto the
+  // existing object. That keeps OpenCode's endpoint.
+  Object.assign(current, update);
 }
 
 function flash(msg: string, isError = false) {

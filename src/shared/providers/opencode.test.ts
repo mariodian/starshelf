@@ -5,6 +5,7 @@ import {
   mockHttpError,
 } from "@/shared/test-utils";
 import { OpenCodeClient } from "@/shared/providers/opencode";
+import { DEFAULT_CATEGORY_STYLE } from "@/shared/providers/base";
 import type { RepoMetadata } from "@/shared/github";
 
 const metadata: RepoMetadata = {
@@ -15,6 +16,16 @@ const metadata: RepoMetadata = {
 
 function makeClient(endpoint: "zen" | "zen-go" = "zen") {
   return new OpenCodeClient("sk-test", "deepseek-v4-flash", endpoint);
+}
+
+function categorizeRequest(owner: string, repo: string) {
+  return {
+    metadata,
+    owner,
+    repo,
+    existingLists: [] as string[],
+    style: DEFAULT_CATEGORY_STYLE,
+  };
 }
 
 setupFetchMock();
@@ -37,7 +48,7 @@ describe("OpenCodeClient.categorize", () => {
       }),
     );
 
-    const result = await makeClient().categorize(metadata, "u", "r", []);
+    const result = await makeClient().categorize(categorizeRequest("u", "r"));
     expect(result).toBe("Compiler Tool");
   });
 
@@ -55,11 +66,13 @@ describe("OpenCodeClient.categorize", () => {
       }),
     );
 
-    const result = await makeClient().categorize(metadata, "u", "r", []);
-    expect(result).toBe("Compiler Tool");
+    const result = await makeClient().categorize(categorizeRequest("u", "r"));
+    expect(result).toBe(
+      "repository is about compilers so the category is Compiler Tool",
+    );
   });
 
-  it("extracts category from reasoning using regex patterns", async () => {
+  it("cleans a reasoning sentence instead of extracting a quoted label", async () => {
     vi.mocked(fetch).mockResolvedValue(
       mockJsonResponse({
         choices: [
@@ -72,11 +85,11 @@ describe("OpenCodeClient.categorize", () => {
       }),
     );
 
-    const result = await makeClient().categorize(metadata, "u", "r", []);
-    expect(result).toBe("DevTools");
+    const result = await makeClient().categorize(categorizeRequest("u", "r"));
+    expect(result).toBe("classified as DevTools");
   });
 
-  it("falls back to the last line of reasoning text", async () => {
+  it("cleans the first reasoning line instead of the last line", async () => {
     vi.mocked(fetch).mockResolvedValue(
       mockJsonResponse({
         choices: [
@@ -90,8 +103,8 @@ describe("OpenCodeClient.categorize", () => {
       }),
     );
 
-    const result = await makeClient().categorize(metadata, "u", "r", []);
-    expect(result).toBe("Rust CLI");
+    const result = await makeClient().categorize(categorizeRequest("u", "r"));
+    expect(result).toBe("Let me think about this");
   });
 
   it("uses the correct endpoint for requests", async () => {
@@ -101,7 +114,7 @@ describe("OpenCodeClient.categorize", () => {
       }),
     );
 
-    await makeClient("zen-go").categorize(metadata, "u", "r", []);
+    await makeClient("zen-go").categorize(categorizeRequest("u", "r"));
 
     expect(fetch).toHaveBeenCalledWith(
       "https://opencode.ai/zen/go/v1/chat/completions",
@@ -113,7 +126,7 @@ describe("OpenCodeClient.categorize", () => {
     vi.mocked(fetch).mockResolvedValue(mockHttpError(402, "Payment required"));
 
     await expect(
-      makeClient().categorize(metadata, "u", "r", []),
+      makeClient().categorize(categorizeRequest("u", "r")),
     ).rejects.toThrow("OpenCode API error 402");
   });
 
@@ -123,7 +136,7 @@ describe("OpenCodeClient.categorize", () => {
     );
 
     await expect(
-      makeClient().categorize(metadata, "u", "r", []),
+      makeClient().categorize(categorizeRequest("u", "r")),
     ).rejects.toThrow("OpenCode returned empty response");
   });
 
@@ -131,7 +144,7 @@ describe("OpenCodeClient.categorize", () => {
     vi.mocked(fetch).mockResolvedValue(mockJsonResponse({ choices: [] }));
 
     await expect(
-      makeClient().categorize(metadata, "u", "r", []),
+      makeClient().categorize(categorizeRequest("u", "r")),
     ).rejects.toThrow("OpenCode returned empty response");
   });
 });

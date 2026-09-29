@@ -7,28 +7,57 @@ export interface BatchCategorizeRepo {
   metadata: RepoMetadata;
 }
 
+export interface CategoryStyle {
+  enableEmojis: boolean;
+  enableCategoryPrefix: boolean;
+  autoFormat: boolean;
+}
+
+export const DEFAULT_CATEGORY_STYLE: CategoryStyle = {
+  enableEmojis: false,
+  enableCategoryPrefix: false,
+  autoFormat: true,
+};
+
+export interface CategorizeRequest {
+  metadata: RepoMetadata;
+  owner: string;
+  repo: string;
+  existingLists: string[];
+  style: CategoryStyle;
+  previousCategories?: string[];
+}
+
+export interface CategorizeBatchRequest {
+  repos: BatchCategorizeRepo[];
+  existingLists: string[];
+  style: CategoryStyle;
+  previousCategories?: string[];
+  signal?: AbortSignal;
+}
+
 export interface AiProviderClient {
   readonly name: string;
-  categorize(
-    metadata: RepoMetadata,
-    owner: string,
-    repo: string,
-    existingLists: string[],
-    enableEmojis?: boolean,
-    enableCategoryPrefix?: boolean,
-    autoFormat?: boolean,
-    previousCategories?: string[],
-  ): Promise<string>;
+  categorize(request: CategorizeRequest): Promise<string>;
   categorizeBatch(
-    repos: BatchCategorizeRepo[],
-    existingLists: string[],
-    enableEmojis?: boolean,
-    enableCategoryPrefix?: boolean,
-    autoFormat?: boolean,
-    previousCategories?: string[],
-    signal?: AbortSignal,
+    request: CategorizeBatchRequest,
   ): Promise<Map<string, string>>;
   listModels?(): Promise<string[]>;
+}
+
+function resolvedStyle(
+  existingLists: string[],
+  style: CategoryStyle,
+): { useEmojis: boolean; useCategories: boolean } {
+  const detectedEmojis = existingLists.some((list) =>
+    /\p{Emoji_Presentation}/u.test(list),
+  );
+  const detectedCategories = existingLists.some((list) => list.includes(":"));
+  return {
+    useEmojis: style.enableEmojis || (style.autoFormat && detectedEmojis),
+    useCategories:
+      style.enableCategoryPrefix || (style.autoFormat && detectedCategories),
+  };
 }
 
 export function buildPrompt(
@@ -36,21 +65,10 @@ export function buildPrompt(
   owner: string,
   repo: string,
   existingLists: string[],
-  enableEmojis = false,
-  enableCategoryPrefix = false,
-  autoFormat = true,
+  style: CategoryStyle = DEFAULT_CATEGORY_STYLE,
   previousCategories: string[] = [],
 ): string {
-  const detectedEmojis =
-    existingLists.length > 0 &&
-    existingLists.some((l) => /\p{Emoji_Presentation}/u.test(l));
-
-  const detectedCategories =
-    existingLists.length > 0 && existingLists.some((l) => /:/.test(l));
-
-  const useEmojis = enableEmojis || (autoFormat && detectedEmojis);
-  const useCategories =
-    enableCategoryPrefix || (autoFormat && detectedCategories);
+  const { useEmojis, useCategories } = resolvedStyle(existingLists, style);
 
   const emojiHint = useEmojis
     ? `
@@ -145,21 +163,10 @@ export function cleanCategory(raw: string): string {
 export function buildBatchPrompt(
   repos: BatchCategorizeRepo[],
   existingLists: string[],
-  enableEmojis = false,
-  enableCategoryPrefix = false,
-  autoFormat = true,
+  style: CategoryStyle = DEFAULT_CATEGORY_STYLE,
   previousCategories: string[] = [],
 ): string {
-  const detectedEmojis =
-    existingLists.length > 0 &&
-    existingLists.some((l) => /\p{Emoji_Presentation}/u.test(l));
-
-  const detectedCategories =
-    existingLists.length > 0 && existingLists.some((l) => /:/.test(l));
-
-  const useEmojis = enableEmojis || (autoFormat && detectedEmojis);
-  const useCategories =
-    enableCategoryPrefix || (autoFormat && detectedCategories);
+  const { useEmojis, useCategories } = resolvedStyle(existingLists, style);
 
   const emojiHint = useEmojis
     ? "Prefix each list name with a relevant emoji (e.g. 🔧 Dev, 🤖 AI, 🔒 Security)."

@@ -5,6 +5,7 @@ import {
   mockHttpError,
 } from "@/shared/test-utils";
 import { AnthropicClient } from "@/shared/providers/anthropic";
+import { DEFAULT_CATEGORY_STYLE } from "@/shared/providers/base";
 import type { RepoMetadata } from "@/shared/github";
 
 const metadata: RepoMetadata = {
@@ -17,6 +18,16 @@ function makeClient() {
   return new AnthropicClient("sk-test", "claude-haiku-4-5");
 }
 
+function categorizeRequest(owner: string, repo: string) {
+  return {
+    metadata,
+    owner,
+    repo,
+    existingLists: [] as string[],
+    style: DEFAULT_CATEGORY_STYLE,
+  };
+}
+
 setupFetchMock();
 
 describe("AnthropicClient.categorize", () => {
@@ -25,7 +36,7 @@ describe("AnthropicClient.categorize", () => {
       mockJsonResponse({ content: [{ text: "CLI Tool" }] }),
     );
 
-    const result = await makeClient().categorize(metadata, "u", "r", []);
+    const result = await makeClient().categorize(categorizeRequest("u", "r"));
     expect(result).toBe("CLI Tool");
   });
 
@@ -34,7 +45,7 @@ describe("AnthropicClient.categorize", () => {
       mockJsonResponse({ content: [{ text: "Tool" }] }),
     );
 
-    await makeClient().categorize(metadata, "owner", "repo", []);
+    await makeClient().categorize(categorizeRequest("owner", "repo"));
 
     const [, opts] = vi.mocked(fetch).mock.calls[0];
     const body = JSON.parse((opts as RequestInit).body as string);
@@ -49,7 +60,7 @@ describe("AnthropicClient.categorize", () => {
     vi.mocked(fetch).mockResolvedValue(mockHttpError(401, "Unauthorized"));
 
     await expect(
-      makeClient().categorize(metadata, "u", "r", []),
+      makeClient().categorize(categorizeRequest("u", "r")),
     ).rejects.toThrow("Anthropic API error 401");
   });
 
@@ -57,7 +68,7 @@ describe("AnthropicClient.categorize", () => {
     vi.mocked(fetch).mockResolvedValue(mockJsonResponse({ content: [] }));
 
     await expect(
-      makeClient().categorize(metadata, "u", "r", []),
+      makeClient().categorize(categorizeRequest("u", "r")),
     ).rejects.toThrow("Anthropic returned empty response");
   });
 
@@ -67,7 +78,7 @@ describe("AnthropicClient.categorize", () => {
     );
 
     await expect(
-      makeClient().categorize(metadata, "u", "r", []),
+      makeClient().categorize(categorizeRequest("u", "r")),
     ).rejects.toThrow("Anthropic returned empty response");
   });
 });

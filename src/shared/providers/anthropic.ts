@@ -1,10 +1,11 @@
-import type { AiProviderClient, BatchCategorizeRepo } from "./base";
-import type { RepoMetadata } from "../github";
 import {
   buildPrompt,
   cleanCategory,
   buildBatchPrompt,
   parseBatchResponse,
+  type AiProviderClient,
+  type CategorizeBatchRequest,
+  type CategorizeRequest,
 } from "./base";
 
 export class AnthropicClient implements AiProviderClient {
@@ -34,16 +35,7 @@ export class AnthropicClient implements AiProviderClient {
       .sort();
   }
 
-  async categorize(
-    metadata: RepoMetadata,
-    owner: string,
-    repo: string,
-    existingLists: string[],
-    enableEmojis = false,
-    enableCategoryPrefix = false,
-    autoFormat = true,
-    previousCategories: string[] = [],
-  ): Promise<string> {
+  async categorize(request: CategorizeRequest): Promise<string> {
     const response = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: {
@@ -59,14 +51,12 @@ export class AnthropicClient implements AiProviderClient {
           {
             role: "user",
             content: buildPrompt(
-              metadata,
-              owner,
-              repo,
-              existingLists,
-              enableEmojis,
-              enableCategoryPrefix,
-              autoFormat,
-              previousCategories,
+              request.metadata,
+              request.owner,
+              request.repo,
+              request.existingLists,
+              request.style,
+              request.previousCategories ?? [],
             ),
           },
         ],
@@ -86,21 +76,13 @@ export class AnthropicClient implements AiProviderClient {
   }
 
   async categorizeBatch(
-    repos: BatchCategorizeRepo[],
-    existingLists: string[],
-    enableEmojis = false,
-    enableCategoryPrefix = false,
-    autoFormat = true,
-    previousCategories: string[] = [],
-    signal?: AbortSignal,
+    request: CategorizeBatchRequest,
   ): Promise<Map<string, string>> {
     const prompt = buildBatchPrompt(
-      repos,
-      existingLists,
-      enableEmojis,
-      enableCategoryPrefix,
-      autoFormat,
-      previousCategories,
+      request.repos,
+      request.existingLists,
+      request.style,
+      request.previousCategories ?? [],
     );
 
     const response = await fetch("https://api.anthropic.com/v1/messages", {
@@ -116,7 +98,7 @@ export class AnthropicClient implements AiProviderClient {
         max_tokens: 4096,
         messages: [{ role: "user", content: prompt }],
       }),
-      signal,
+      signal: request.signal,
     });
 
     if (!response.ok) {

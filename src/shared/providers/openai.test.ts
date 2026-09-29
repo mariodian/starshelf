@@ -5,6 +5,7 @@ import {
   mockHttpError,
 } from "@/shared/test-utils";
 import { OpenAIClient } from "@/shared/providers/openai";
+import { DEFAULT_CATEGORY_STYLE } from "@/shared/providers/base";
 import type { RepoMetadata } from "@/shared/github";
 
 const metadata: RepoMetadata = {
@@ -17,6 +18,16 @@ function makeClient() {
   return new OpenAIClient("sk-test", "gpt-5-mini");
 }
 
+function categorizeRequest(owner: string, repo: string) {
+  return {
+    metadata,
+    owner,
+    repo,
+    existingLists: [] as string[],
+    style: DEFAULT_CATEGORY_STYLE,
+  };
+}
+
 setupFetchMock();
 
 describe("OpenAIClient.categorize", () => {
@@ -27,7 +38,7 @@ describe("OpenAIClient.categorize", () => {
       }),
     );
 
-    const result = await makeClient().categorize(metadata, "u", "r", []);
+    const result = await makeClient().categorize(categorizeRequest("u", "r"));
     expect(result).toBe("AI Library");
   });
 
@@ -38,7 +49,7 @@ describe("OpenAIClient.categorize", () => {
       }),
     );
 
-    await makeClient().categorize(metadata, "owner", "repo", []);
+    await makeClient().categorize(categorizeRequest("owner", "repo"));
 
     const [, opts] = vi.mocked(fetch).mock.calls[0];
     const body = JSON.parse((opts as RequestInit).body as string);
@@ -53,7 +64,7 @@ describe("OpenAIClient.categorize", () => {
     vi.mocked(fetch).mockResolvedValue(mockHttpError(429, "Rate limited"));
 
     await expect(
-      makeClient().categorize(metadata, "u", "r", []),
+      makeClient().categorize(categorizeRequest("u", "r")),
     ).rejects.toThrow("OpenAI API error 429");
   });
 
@@ -61,7 +72,7 @@ describe("OpenAIClient.categorize", () => {
     vi.mocked(fetch).mockResolvedValue(mockJsonResponse({ choices: [] }));
 
     await expect(
-      makeClient().categorize(metadata, "u", "r", []),
+      makeClient().categorize(categorizeRequest("u", "r")),
     ).rejects.toThrow("OpenAI returned empty response");
   });
 
@@ -71,7 +82,7 @@ describe("OpenAIClient.categorize", () => {
     );
 
     await expect(
-      makeClient().categorize(metadata, "u", "r", []),
+      makeClient().categorize(categorizeRequest("u", "r")),
     ).rejects.toThrow("OpenAI returned empty response");
   });
 });

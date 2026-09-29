@@ -1,11 +1,19 @@
-import type { AiProviderClient, BatchCategorizeRepo } from "./base";
-import type { RepoMetadata } from "../github";
+import { chatCompletion } from "./chat";
 import {
   buildPrompt,
   cleanCategory,
   buildBatchPrompt,
   parseBatchResponse,
+  type AiProviderClient,
+  type CategorizeBatchRequest,
+  type CategorizeRequest,
 } from "./base";
+
+const CATEGORIZE_SYSTEM =
+  "You are a GitHub repo classifier. Assign a category label using at most 3 nouns. No verbs, no articles, no explanation. Output only the label.";
+
+const BATCH_SYSTEM =
+  "You are a GitHub repo classifier. Categorize each repo using at most 3 nouns. Return a JSON object mapping repo full names to category labels. Output ONLY the JSON.";
 
 export class OpenAIClient implements AiProviderClient {
   readonly name = "OpenAI";
@@ -15,109 +23,45 @@ export class OpenAIClient implements AiProviderClient {
     private model: string,
   ) {}
 
-  async categorize(
-    metadata: RepoMetadata,
-    owner: string,
-    repo: string,
-    existingLists: string[],
-    enableEmojis = false,
-    enableCategoryPrefix = false,
-    autoFormat = true,
-    previousCategories: string[] = [],
-  ): Promise<string> {
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${this.apiKey}`,
-      },
-      body: JSON.stringify({
-        model: this.model,
-        messages: [
-          {
-            role: "system",
-            content:
-              "You are a GitHub repo classifier. Assign a category label using at most 3 nouns. No verbs, no articles, no explanation. Output only the label.",
-          },
-          {
-            role: "user",
-            content: buildPrompt(
-              metadata,
-              owner,
-              repo,
-              existingLists,
-              enableEmojis,
-              enableCategoryPrefix,
-              autoFormat,
-              previousCategories,
-            ),
-          },
-        ],
-        max_completion_tokens: 4096,
-      }),
+  async categorize(request: CategorizeRequest): Promise<string> {
+    const text = await chatCompletion({
+      url: "https://api.openai.com/v1/chat/completions",
+      apiKey: this.apiKey,
+      model: this.model,
+      system: CATEGORIZE_SYSTEM,
+      user: buildPrompt(
+        request.metadata,
+        request.owner,
+        request.repo,
+        request.existingLists,
+        request.style,
+        request.previousCategories ?? [],
+      ),
+      maxTokensField: "max_completion_tokens",
+      providerName: this.name,
     });
-
-    if (!response.ok) {
-      const body = await response.text();
-      throw new Error(`OpenAI API error ${response.status}: ${body}`);
-    }
-
-    const data = await response.json();
-    if (!data.choices?.[0]?.message?.content) {
-      throw new Error("OpenAI returned empty response");
-    }
-    return cleanCategory(data.choices[0].message.content);
+    return cleanCategory(text);
   }
 
   async categorizeBatch(
-    repos: BatchCategorizeRepo[],
-    existingLists: string[],
-    enableEmojis = false,
-    enableCategoryPrefix = false,
-    autoFormat = true,
-    previousCategories: string[] = [],
-    signal?: AbortSignal,
+    request: CategorizeBatchRequest,
   ): Promise<Map<string, string>> {
-    const prompt = buildBatchPrompt(
-      repos,
-      existingLists,
-      enableEmojis,
-      enableCategoryPrefix,
-      autoFormat,
-      previousCategories,
-    );
-
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${this.apiKey}`,
-      },
-      body: JSON.stringify({
-        model: this.model,
-        messages: [
-          {
-            role: "system",
-            content:
-              "You are a GitHub repo classifier. Categorize each repo using at most 3 nouns. Return a JSON object mapping repo full names to category labels. Output ONLY the JSON.",
-          },
-          { role: "user", content: prompt },
-        ],
-        max_completion_tokens: 4096,
-      }),
-      signal,
+    const text = await chatCompletion({
+      url: "https://api.openai.com/v1/chat/completions",
+      apiKey: this.apiKey,
+      model: this.model,
+      system: BATCH_SYSTEM,
+      user: buildBatchPrompt(
+        request.repos,
+        request.existingLists,
+        request.style,
+        request.previousCategories ?? [],
+      ),
+      maxTokensField: "max_completion_tokens",
+      signal: request.signal,
+      providerName: this.name,
     });
-
-    if (!response.ok) {
-      const body = await response.text();
-      throw new Error(`OpenAI API error ${response.status}: ${body}`);
-    }
-
-    const data = await response.json();
-    if (!data.choices?.[0]?.message?.content) {
-      throw new Error("OpenAI returned empty response");
-    }
-    return parseBatchResponse(data.choices[0].message.content);
+    return parseBatchResponse(text);
   }
 
   async listModels(): Promise<string[]> {

@@ -62,14 +62,22 @@ describe("buildPrompt", () => {
 
   it("includes emoji hint when enableEmojis is true", () => {
     const metadata: RepoMetadata = { topics: ["cli"] };
-    const prompt = buildPrompt(metadata, "user", "tool", [], true, false);
+    const prompt = buildPrompt(metadata, "user", "tool", [], {
+      enableEmojis: true,
+      enableCategoryPrefix: false,
+      autoFormat: true,
+    });
 
     expect(prompt).toContain("Prefix the list name with a relevant emoji");
   });
 
   it("omits emoji hint when enableEmojis is false", () => {
     const metadata: RepoMetadata = { topics: ["cli"] };
-    const prompt = buildPrompt(metadata, "user", "tool", [], false, false);
+    const prompt = buildPrompt(metadata, "user", "tool", [], {
+      enableEmojis: false,
+      enableCategoryPrefix: false,
+      autoFormat: true,
+    });
 
     expect(prompt).not.toContain("relevant emoji");
   });
@@ -81,8 +89,11 @@ describe("buildPrompt", () => {
       "user",
       "tool",
       ["🔧 Dev Tools", "🤖 AI"],
-      false,
-      false,
+      {
+        enableEmojis: false,
+        enableCategoryPrefix: false,
+        autoFormat: true,
+      },
     );
 
     expect(prompt).toContain("Prefix the list name with a relevant emoji");
@@ -95,9 +106,11 @@ describe("buildPrompt", () => {
       "user",
       "tool",
       ["🔧 Dev Tools", "🤖 AI"],
-      false,
-      false,
-      false,
+      {
+        enableEmojis: false,
+        enableCategoryPrefix: false,
+        autoFormat: false,
+      },
     );
 
     expect(prompt).not.toContain("relevant emoji");
@@ -105,14 +118,22 @@ describe("buildPrompt", () => {
 
   it("includes category prefix format when enableCategoryPrefix is true", () => {
     const metadata: RepoMetadata = { topics: ["web"] };
-    const prompt = buildPrompt(metadata, "user", "tool", [], false, true);
+    const prompt = buildPrompt(metadata, "user", "tool", [], {
+      enableEmojis: false,
+      enableCategoryPrefix: true,
+      autoFormat: true,
+    });
 
     expect(prompt).toContain("Category: Name");
   });
 
   it("omits category prefix format when enableCategoryPrefix is false", () => {
     const metadata: RepoMetadata = { topics: ["web"] };
-    const prompt = buildPrompt(metadata, "user", "tool", [], false, false);
+    const prompt = buildPrompt(metadata, "user", "tool", [], {
+      enableEmojis: false,
+      enableCategoryPrefix: false,
+      autoFormat: true,
+    });
 
     expect(prompt).not.toContain("Category: Name");
   });
@@ -124,8 +145,11 @@ describe("buildPrompt", () => {
       "user",
       "tool",
       ["Dev: Framework", "AI: Tool"],
-      false,
-      false,
+      {
+        enableEmojis: false,
+        enableCategoryPrefix: false,
+        autoFormat: true,
+      },
     );
 
     expect(prompt).toContain("Category: Name");
@@ -138,8 +162,11 @@ describe("buildPrompt", () => {
       "user",
       "tool",
       ["DevOps", "CLI Tools"],
-      false,
-      false,
+      {
+        enableEmojis: false,
+        enableCategoryPrefix: false,
+        autoFormat: true,
+      },
     );
 
     expect(prompt).not.toContain("Category: Name");
@@ -152,9 +179,11 @@ describe("buildPrompt", () => {
       "user",
       "tool",
       ["Dev: Framework", "AI: Tool"],
-      false,
-      false,
-      false,
+      {
+        enableEmojis: false,
+        enableCategoryPrefix: false,
+        autoFormat: false,
+      },
     );
 
     expect(prompt).not.toContain("Category: Name");

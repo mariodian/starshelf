@@ -105,16 +105,18 @@ async function categorizeAndAssign(
 
   const category = await withErrorHandling(
     async () => {
-      const cat = await client.categorize(
+      const cat = await client.categorize({
         metadata,
         owner,
         repo,
-        existingNames,
-        settings.enableEmojis,
-        settings.enableCategoryPrefix,
-        settings.autoFormat,
-        previousCategories ?? [],
-      );
+        existingLists: existingNames,
+        style: {
+          enableEmojis: settings.enableEmojis,
+          enableCategoryPrefix: settings.enableCategoryPrefix,
+          autoFormat: settings.autoFormat,
+        },
+        previousCategories: previousCategories ?? [],
+      });
       logger.log("[stars] bg | AI result:", cat);
       return cat;
     },

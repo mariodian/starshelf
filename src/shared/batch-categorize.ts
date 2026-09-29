@@ -142,15 +142,16 @@ export async function batchCategorize(
           "Analyzing with AI...",
         );
 
-        const catMap = await client.categorizeBatch(
-          batchRepos,
-          existingNames,
-          settings.enableEmojis,
-          settings.enableCategoryPrefix,
-          settings.autoFormat,
-          undefined,
+        const catMap = await client.categorizeBatch({
+          repos: batchRepos,
+          existingLists: existingNames,
+          style: {
+            enableEmojis: settings.enableEmojis ?? false,
+            enableCategoryPrefix: settings.enableCategoryPrefix ?? false,
+            autoFormat: settings.autoFormat ?? true,
+          },
           signal,
-        );
+        });
 
         const tasks = repos.map(async (repo) => {
           if (signal?.aborted) return;

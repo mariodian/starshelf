@@ -1,11 +1,19 @@
-import type { AiProviderClient, BatchCategorizeRepo } from "./base";
-import type { RepoMetadata } from "../github";
+import { chatCompletion } from "./chat";
 import {
   buildPrompt,
   cleanCategory,
   buildBatchPrompt,
   parseBatchResponse,
+  type AiProviderClient,
+  type CategorizeBatchRequest,
+  type CategorizeRequest,
 } from "./base";
+
+const CATEGORIZE_SYSTEM =
+  "You are a GitHub repo classifier. Assign a category label using at most 3 nouns. No verbs, no articles, no explanation. Output only the label.";
+
+const BATCH_SYSTEM =
+  "You are a GitHub repo classifier. Categorize each repo using at most 3 nouns. Return a JSON object mapping repo full names to category labels. Output ONLY the JSON.";
 
 // OpenCode Zen and Go use an OpenAI-compatible chat completions API.
 // Model IDs follow the pattern provider_id/model_id (e.g. opencode/gpt-5.1-codex).
@@ -42,147 +50,46 @@ export class OpenCodeClient implements AiProviderClient {
     return data.data.map((m: { id: string }) => m.id).sort();
   }
 
-  async categorize(
-    metadata: RepoMetadata,
-    owner: string,
-    repo: string,
-    existingLists: string[],
-    enableEmojis = false,
-    enableCategoryPrefix = false,
-    autoFormat = true,
-    previousCategories: string[] = [],
-  ): Promise<string> {
-    const response = await fetch(`${this.baseUrl}/chat/completions`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${this.apiKey}`,
-      },
-      body: JSON.stringify({
-        model: this.model,
-        messages: [
-          {
-            role: "system",
-            content:
-              "You are a GitHub repo classifier. Assign a category label using at most 3 nouns. No verbs, no articles, no explanation. Output only the label.",
-          },
-          {
-            role: "user",
-            content: buildPrompt(
-              metadata,
-              owner,
-              repo,
-              existingLists,
-              enableEmojis,
-              enableCategoryPrefix,
-              autoFormat,
-              previousCategories,
-            ),
-          },
-        ],
-        max_tokens: 4096,
-        temperature: 0,
-      }),
+  async categorize(request: CategorizeRequest): Promise<string> {
+    const text = await chatCompletion({
+      url: `${this.baseUrl}/chat/completions`,
+      apiKey: this.apiKey,
+      model: this.model,
+      system: CATEGORIZE_SYSTEM,
+      user: buildPrompt(
+        request.metadata,
+        request.owner,
+        request.repo,
+        request.existingLists,
+        request.style,
+        request.previousCategories ?? [],
+      ),
+      maxTokensField: "max_tokens",
+      temperature: 0,
+      providerName: this.name,
     });
-
-    if (!response.ok) {
-      const body = await response.text();
-      throw new Error(`OpenCode API error ${response.status}: ${body}`);
-    }
-
-    const data = await response.json();
-    const choice = data.choices?.[0];
-
-    // Primary: use content field
-    const content = choice?.message?.content;
-    if (content) return cleanCategory(content);
-
-    // Fallback: reasoning models (e.g. DeepSeek) put output in reasoning_content
-    const reasoning = choice?.message?.reasoning_content;
-    if (reasoning) {
-      const extracted = extractCategory(reasoning);
-      if (extracted) return cleanCategory(extracted);
-    }
-
-    throw new Error("OpenCode returned empty response");
+    return cleanCategory(text);
   }
 
   async categorizeBatch(
-    repos: BatchCategorizeRepo[],
-    existingLists: string[],
-    enableEmojis = false,
-    enableCategoryPrefix = false,
-    autoFormat = true,
-    previousCategories: string[] = [],
-    signal?: AbortSignal,
+    request: CategorizeBatchRequest,
   ): Promise<Map<string, string>> {
-    const prompt = buildBatchPrompt(
-      repos,
-      existingLists,
-      enableEmojis,
-      enableCategoryPrefix,
-      autoFormat,
-      previousCategories,
-    );
-
-    const response = await fetch(`${this.baseUrl}/chat/completions`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${this.apiKey}`,
-      },
-      body: JSON.stringify({
-        model: this.model,
-        messages: [
-          {
-            role: "system",
-            content:
-              "You are a GitHub repo classifier. Categorize each repo using at most 3 nouns. Return a JSON object mapping repo full names to category labels. Output ONLY the JSON.",
-          },
-          { role: "user", content: prompt },
-        ],
-        max_tokens: 4096,
-        temperature: 0,
-      }),
-      signal,
+    const text = await chatCompletion({
+      url: `${this.baseUrl}/chat/completions`,
+      apiKey: this.apiKey,
+      model: this.model,
+      system: BATCH_SYSTEM,
+      user: buildBatchPrompt(
+        request.repos,
+        request.existingLists,
+        request.style,
+        request.previousCategories ?? [],
+      ),
+      maxTokensField: "max_tokens",
+      temperature: 0,
+      signal: request.signal,
+      providerName: this.name,
     });
-
-    if (!response.ok) {
-      const body = await response.text();
-      throw new Error(`OpenCode API error ${response.status}: ${body}`);
-    }
-
-    const data = await response.json();
-    const choice = data.choices?.[0];
-
-    const content = choice?.message?.content;
-    if (content) return parseBatchResponse(content);
-
-    const reasoning = choice?.message?.reasoning_content;
-    if (reasoning) return parseBatchResponse(reasoning);
-
-    throw new Error("OpenCode returned empty response");
+    return parseBatchResponse(text);
   }
-}
-
-function extractCategory(text: string): string | null {
-  // Try explicit category declarations in the reasoning
-  for (const re of [
-    /category(?:\s+is)?[:\s]+["']?([\w\s-]+?)["']?(?:\.|$)/im,
-    /(?:would be|should be|is)\s+["']?([\w\s-]+?)["']?(?:\.|$)/im,
-    /classified\s+as\s+["']?([\w\s-]+?)["']?(?:\.|$)/im,
-    /["']([\w\s-]{2,30})["']/g,
-  ]) {
-    const m = text.match(re);
-    if (m?.[1]?.trim()) return m[1].trim();
-  }
-
-  // Last line as fallback
-  const lines = text.split("\n").filter((l) => l.trim());
-  const last = lines[lines.length - 1]?.trim();
-  if (last && last.length <= 40) {
-    return last.replace(/[^\w\s-]/g, "").trim();
-  }
-
-  return null;
 }
