@@ -263,136 +263,44 @@ class Semaphore {
   }
 }
 
-export async function getAllListedRepoIds(
-  token: string,
-  signal?: AbortSignal,
-): Promise<Set<string>> {
-  const repoIds = new Set<string>();
-
-  type ListNode = {
-    id: string;
-    items: {
-      nodes: Array<{ id: string } | null> | null;
-      pageInfo: { hasNextPage: boolean; endCursor: string | null };
-    } | null;
-  } | null;
-
-  type ListsData = {
-    viewer: {
-      lists: {
-        nodes: Array<ListNode> | null;
-      };
-    };
-  };
-
-  const data = await graphqlRequest<ListsData>(
-    token,
-    `query {
-      viewer {
-        lists(first: 100) {
-          nodes {
-            id
-            items(first: ${GRAPHQL_PAGE_SIZE}) {
-              nodes { ... on Repository { id } }
-              pageInfo { hasNextPage endCursor }
-            }
-          }
-        }
-      }
-    }`,
-    undefined,
-    signal,
-  );
-
-  type ItemPageData = {
-    node: {
-      items: {
-        nodes: Array<{ id: string } | null> | null;
-        pageInfo: { hasNextPage: boolean; endCursor: string | null };
-      };
-    } | null;
-  };
-
-  for (const list of data.viewer.lists.nodes ?? []) {
-    for (const node of list?.items?.nodes ?? []) {
-      if (node) repoIds.add(node.id);
-    }
-  }
-
-  let paginating = (data.viewer.lists.nodes ?? []).flatMap((list) => {
-    const endCursor = list?.items?.pageInfo.endCursor;
-    if (!list?.items?.pageInfo.hasNextPage || !endCursor) return [];
-    return [{ id: list.id, cursor: endCursor }];
-  });
-
-  while (paginating.length > 0) {
-    if (signal?.aborted) break;
-
-    const results = await Promise.all(
-      paginating.map(({ id, cursor }) =>
-        graphqlRequest<ItemPageData>(
-          token,
-          `query($listId: ID!, $cursor: String) {
-            node(id: $listId) {
-              ... on UserList {
-                items(first: ${GRAPHQL_PAGE_SIZE}, after: $cursor) {
-                  nodes { ... on Repository { id } }
-                  pageInfo { hasNextPage endCursor }
-                }
-              }
-            }
-          }`,
-          { listId: id, cursor },
-          signal,
-        ),
-      ),
-    );
-
-    const next: typeof paginating = [];
-    for (let i = 0; i < results.length; i++) {
-      const ip = results[i].node?.items;
-      if (!ip) continue;
-      for (const node of ip.nodes ?? []) {
-        if (node) repoIds.add(node.id);
-      }
-      if (ip.pageInfo.hasNextPage && ip.pageInfo.endCursor) {
-        next.push({ id: paginating[i].id, cursor: ip.pageInfo.endCursor });
-      }
-    }
-    paginating = next;
-  }
-
-  return repoIds;
-}
-
-export interface RepoListMembership {
+interface ListedRepo {
+  repoId: string;
   listId: string;
   listName: string;
 }
 
-export async function getRepoListMap(
-  token: string,
-  signal?: AbortSignal,
-): Promise<Map<string, RepoListMembership>> {
-  const memberships = new Map<string, RepoListMembership>();
+type ListNode = {
+  id: string;
+  name: string;
+  items: {
+    nodes: Array<{ id: string } | null> | null;
+    pageInfo: { hasNextPage: boolean; endCursor: string | null };
+  } | null;
+} | null;
 
-  type ListNode = {
-    id: string;
-    name: string;
+type ListsData = {
+  viewer: {
+    lists: {
+      nodes: Array<ListNode> | null;
+    };
+  };
+};
+
+type ItemPageData = {
+  node: {
     items: {
       nodes: Array<{ id: string } | null> | null;
       pageInfo: { hasNextPage: boolean; endCursor: string | null };
-    } | null;
-  } | null;
-
-  type ListsData = {
-    viewer: {
-      lists: {
-        nodes: Array<ListNode> | null;
-      };
     };
-  };
+  } | null;
+};
 
+type ListPageCursor = { id: string; name: string; cursor: string };
+
+async function* streamListedRepos(
+  token: string,
+  signal?: AbortSignal,
+): AsyncGenerator<ListedRepo, void, unknown> {
   const data = await graphqlRequest<ListsData>(
     token,
     `query {
@@ -413,29 +321,18 @@ export async function getRepoListMap(
     signal,
   );
 
-  type ItemPageData = {
-    node: {
-      items: {
-        nodes: Array<{ id: string } | null> | null;
-        pageInfo: { hasNextPage: boolean; endCursor: string | null };
-      };
-    } | null;
-  };
-
+  let paginating: ListPageCursor[] = [];
   for (const list of data.viewer.lists.nodes ?? []) {
-    if (!list) continue;
-    for (const node of list.items?.nodes ?? []) {
-      if (node && !memberships.has(node.id)) {
-        memberships.set(node.id, { listId: list.id, listName: list.name });
-      }
+    if (!list?.items) continue;
+    for (const node of list.items.nodes ?? []) {
+      if (!node) continue;
+      yield { repoId: node.id, listId: list.id, listName: list.name };
+    }
+    const { hasNextPage, endCursor } = list.items.pageInfo;
+    if (hasNextPage && endCursor) {
+      paginating.push({ id: list.id, name: list.name, cursor: endCursor });
     }
   }
-
-  let paginating = (data.viewer.lists.nodes ?? []).flatMap((list) => {
-    const endCursor = list?.items?.pageInfo.endCursor;
-    if (!list?.items?.pageInfo.hasNextPage || !endCursor) return [];
-    return [{ id: list.id, name: list.name, cursor: endCursor }];
-  });
 
   while (paginating.length > 0) {
     if (signal?.aborted) break;
@@ -460,29 +357,54 @@ export async function getRepoListMap(
       ),
     );
 
-    const next: typeof paginating = [];
+    const next: ListPageCursor[] = [];
     for (let i = 0; i < results.length; i++) {
       const ip = results[i].node?.items;
       if (!ip) continue;
+      const list = paginating[i];
       for (const node of ip.nodes ?? []) {
-        if (node && !memberships.has(node.id)) {
-          memberships.set(node.id, {
-            listId: paginating[i].id,
-            listName: paginating[i].name,
-          });
-        }
+        if (!node) continue;
+        yield { repoId: node.id, listId: list.id, listName: list.name };
       }
       if (ip.pageInfo.hasNextPage && ip.pageInfo.endCursor) {
         next.push({
-          id: paginating[i].id,
-          name: paginating[i].name,
+          id: list.id,
+          name: list.name,
           cursor: ip.pageInfo.endCursor,
         });
       }
     }
     paginating = next;
   }
+}
 
+export async function getAllListedRepoIds(
+  token: string,
+  signal?: AbortSignal,
+): Promise<Set<string>> {
+  const repoIds = new Set<string>();
+  for await (const { repoId } of streamListedRepos(token, signal)) {
+    repoIds.add(repoId);
+  }
+  return repoIds;
+}
+
+export interface RepoListMembership {
+  listId: string;
+  listName: string;
+}
+
+export async function getRepoListMap(
+  token: string,
+  signal?: AbortSignal,
+): Promise<Map<string, RepoListMembership>> {
+  const memberships = new Map<string, RepoListMembership>();
+  for await (const { repoId, listId, listName } of streamListedRepos(
+    token,
+    signal,
+  )) {
+    if (!memberships.has(repoId)) memberships.set(repoId, { listId, listName });
+  }
   return memberships;
 }
 

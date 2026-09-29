@@ -370,6 +370,43 @@ describe("getAllListedRepoIds", () => {
     const ids = await getAllListedRepoIds("token");
     expect(ids.size).toBe(1);
   });
+
+  it("skips null lists, null items, and null nodes, and does not refetch a null endCursor", async () => {
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(
+        mockGraphqlResponse({
+          viewer: {
+            lists: {
+              nodes: [
+                null,
+                { id: "Lnull", items: null },
+                {
+                  id: "L1",
+                  items: {
+                    nodes: [null, { id: "R1" }],
+                    pageInfo: { hasNextPage: true, endCursor: null },
+                  },
+                },
+              ],
+            },
+          },
+        }),
+      )
+      .mockResolvedValueOnce(
+        mockGraphqlResponse({
+          node: {
+            items: {
+              nodes: [{ id: "R_EXTRA" }],
+              pageInfo: { hasNextPage: false, endCursor: null },
+            },
+          },
+        }),
+      );
+
+    const ids = await getAllListedRepoIds("token");
+    expect([...ids]).toEqual(["R1"]);
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("getRepoListMap", () => {
@@ -521,6 +558,53 @@ describe("getRepoListMap", () => {
 
     const result = await getRepoListMap("token");
     expect(result.size).toBe(2);
+  });
+
+  it("skips null lists, null items, and null nodes, and keeps the first list", async () => {
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(
+        mockGraphqlResponse({
+          viewer: {
+            lists: {
+              nodes: [
+                null,
+                { id: "Lnull", name: "Empty", items: null },
+                {
+                  id: "L1",
+                  name: "First",
+                  items: {
+                    nodes: [null, { id: "R1" }],
+                    pageInfo: { hasNextPage: true, endCursor: null },
+                  },
+                },
+                {
+                  id: "L2",
+                  name: "Second",
+                  items: {
+                    nodes: [{ id: "R1" }],
+                    pageInfo: { hasNextPage: false, endCursor: null },
+                  },
+                },
+              ],
+            },
+          },
+        }),
+      )
+      .mockResolvedValueOnce(
+        mockGraphqlResponse({
+          node: {
+            items: {
+              nodes: [{ id: "R_EXTRA" }],
+              pageInfo: { hasNextPage: false, endCursor: null },
+            },
+          },
+        }),
+      );
+
+    const result = await getRepoListMap("token");
+    expect(result.size).toBe(1);
+    expect(result.get("R1")).toEqual({ listId: "L1", listName: "First" });
+    expect(fetch).toHaveBeenCalledTimes(1);
   });
 });
 
