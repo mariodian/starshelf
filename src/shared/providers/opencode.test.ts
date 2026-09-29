@@ -4,7 +4,7 @@ import {
   mockJsonResponse,
   mockHttpError,
 } from "@/shared/test-utils";
-import { OpenCodeClient } from "@/shared/providers/opencode";
+import { openCodeClient } from "@/shared/providers/factory";
 import { DEFAULT_CATEGORY_STYLE } from "@/shared/providers/base";
 import type { RepoMetadata } from "@/shared/github";
 
@@ -15,7 +15,7 @@ const metadata: RepoMetadata = {
 };
 
 function makeClient(endpoint: "zen" | "zen-go" = "zen") {
-  return new OpenCodeClient("sk-test", "deepseek-v4-flash", endpoint);
+  return openCodeClient("sk-test", "deepseek-v4-flash", endpoint);
 }
 
 function categorizeRequest(owner: string, repo: string) {

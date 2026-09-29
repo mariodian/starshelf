@@ -1,12 +1,11 @@
 import type { RepoMetadata } from "@/shared/github";
 import {
-  assignRepoToList,
   getAllListedRepoIds,
-  getViewerLists,
+  ListCatalog,
   streamUncategorizedRepos,
   type StarredRepoWithLists,
 } from "@/shared/github-lists";
-import type { AiProviderClient } from "@/shared/providers/base";
+import type { AiProviderClient, CategoryStyle } from "@/shared/providers/base";
 
 const AI_BATCH_SIZE = 10;
 const CONCURRENCY_LIMIT = 10;
@@ -17,9 +16,7 @@ export interface BatchCategorizeOptions {
   client: AiProviderClient;
   settings: {
     listPrivacy: "public" | "private";
-    enableEmojis?: boolean;
-    enableCategoryPrefix?: boolean;
-    autoFormat?: boolean;
+    style: CategoryStyle;
   };
   onProgress?: (
     current: number,
@@ -90,16 +87,13 @@ export async function batchCategorize(
 
   try {
     await onProgress?.(0, "", "Fetching your lists...");
-    const lists = await getViewerLists(token, signal);
-    const existingNames = lists.map((l) => l.name);
+    const catalog = await ListCatalog.load(token, settings.listPrivacy, signal);
 
-    const listedIds =
-      lists.length > 0
-        ? await (async () => {
-            await onProgress?.(0, "", "Scanning your starred repositories...");
-            return getAllListedRepoIds(token, signal);
-          })()
-        : new Set<string>();
+    let listedIds = new Set<string>();
+    if (catalog.names().length > 0) {
+      await onProgress?.(0, "", "Scanning your starred repositories...");
+      listedIds = await getAllListedRepoIds(token, signal);
+    }
 
     const semaphore = new Semaphore(CONCURRENCY_LIMIT);
 
@@ -107,13 +101,7 @@ export async function batchCategorize(
       repo: StarredRepoWithLists,
       category: string,
     ): Promise<void> {
-      const { list, created } = await assignRepoToList(repo.nodeId, category, {
-        token,
-        listPrivacy: settings.listPrivacy,
-        lists,
-        signal,
-      });
-      if (created) existingNames.push(list.name);
+      await catalog.assign(repo.nodeId, category, signal);
 
       if (signal?.aborted) return;
 
@@ -144,12 +132,8 @@ export async function batchCategorize(
 
         const catMap = await client.categorizeBatch({
           repos: batchRepos,
-          existingLists: existingNames,
-          style: {
-            enableEmojis: settings.enableEmojis ?? false,
-            enableCategoryPrefix: settings.enableCategoryPrefix ?? false,
-            autoFormat: settings.autoFormat ?? true,
-          },
+          existingLists: catalog.names(),
+          style: settings.style,
           signal,
         });
 

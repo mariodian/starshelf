@@ -195,7 +195,7 @@ export async function deleteUserList(
   );
 }
 
-export function normalizeListName(name: string): string {
+function normalizeListName(name: string): string {
   return name
     .toLowerCase()
     .trim()
@@ -209,69 +209,83 @@ export function fuzzyMatchListName(
   lists: GitHubList[],
 ): GitHubList | null {
   const target = normalizeListName(category);
-
-  for (const list of lists) {
-    if (normalizeListName(list.name) === target) return list;
-  }
-
-  return null;
+  return lists.find((list) => normalizeListName(list.name) === target) ?? null;
 }
 
-export interface AssignRepoResult {
-  list: GitHubList;
-  /** True only for the call that invoked createUserList. */
-  created: boolean;
-}
+/**
+ * Lists for one categorization run. Match-or-create and in-flight creates
+ * live here, so names() stays in sync without a parallel cache.
+ */
+export class ListCatalog {
+  private readonly lists: GitHubList[];
+  private readonly inflight = new Map<string, Promise<GitHubList>>();
 
-const inflightCreates = new Map<string, Promise<GitHubList>>();
-
-export async function assignRepoToList(
-  repoNodeId: string,
-  category: string,
-  options: {
-    token: string;
-    listPrivacy: "public" | "private";
-    /** Newly created lists are pushed onto this array before the promise resolves. */
-    lists: GitHubList[];
-    signal?: AbortSignal;
-  },
-): Promise<AssignRepoResult> {
-  const { token, lists, signal } = options;
-  const key = normalizeListName(category);
-  const matched = lists.find((list) => normalizeListName(list.name) === key);
-  if (matched) {
-    if (!signal?.aborted) {
-      await updateUserListsForItem(repoNodeId, [matched.id], token, signal);
-    }
-    return { list: matched, created: false };
+  constructor(
+    lists: GitHubList[],
+    private readonly token: string,
+    private readonly listPrivacy: "public" | "private",
+  ) {
+    this.lists = [...lists];
   }
 
-  let created = false;
-  let pending = inflightCreates.get(key);
-  if (!pending) {
-    created = true;
-    pending = createUserList(
-      category,
-      options.listPrivacy === "private",
+  static async load(
+    token: string,
+    listPrivacy: "public" | "private",
+    signal?: AbortSignal,
+  ): Promise<ListCatalog> {
+    return new ListCatalog(
+      await getViewerLists(token, signal),
       token,
-      signal,
-    ).then((list) => {
-      lists.push(list);
-      return list;
-    });
-    inflightCreates.set(key, pending);
-    pending.finally(() => {
-      if (inflightCreates.get(key) === pending) {
-        inflightCreates.delete(key);
-      }
-    });
+      listPrivacy,
+    );
   }
 
-  const list = await pending;
-  if (!signal?.aborted) {
-    await updateUserListsForItem(repoNodeId, [list.id], token, signal);
+  names(): string[] {
+    return this.lists.map((list) => list.name);
   }
-  return { list, created };
+
+  async assign(
+    repoNodeId: string,
+    category: string,
+    signal?: AbortSignal,
+  ): Promise<GitHubList> {
+    const key = normalizeListName(category);
+    const matched = fuzzyMatchListName(category, this.lists);
+    if (matched) {
+      await this.addToList(repoNodeId, matched.id, signal);
+      return matched;
+    }
+
+    let pending = this.inflight.get(key);
+    if (!pending) {
+      pending = createUserList(
+        category,
+        this.listPrivacy === "private",
+        this.token,
+        signal,
+      ).then((list) => {
+        this.lists.push(list);
+        return list;
+      });
+      this.inflight.set(key, pending);
+      pending.finally(() => {
+        if (this.inflight.get(key) === pending) this.inflight.delete(key);
+      });
+    }
+
+    const list = await pending;
+    await this.addToList(repoNodeId, list.id, signal);
+    return list;
+  }
+
+  private async addToList(
+    repoNodeId: string,
+    listId: string,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    if (signal?.aborted) return;
+    await updateUserListsForItem(repoNodeId, [listId], this.token, signal);
+  }
 }
 
 interface ListedRepo {

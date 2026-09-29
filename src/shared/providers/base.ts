@@ -45,6 +45,18 @@ export interface AiProviderClient {
   listModels?(): Promise<string[]>;
 }
 
+export function categoryStyle(settings: {
+  enableEmojis: boolean;
+  enableCategoryPrefix: boolean;
+  autoFormat: boolean;
+}): CategoryStyle {
+  return {
+    enableEmojis: settings.enableEmojis,
+    enableCategoryPrefix: settings.enableCategoryPrefix,
+    autoFormat: settings.autoFormat,
+  };
+}
+
 function resolvedStyle(
   existingLists: string[],
   style: CategoryStyle,
@@ -60,6 +72,85 @@ function resolvedStyle(
   };
 }
 
+const SINGLE_EMOJI =
+  'Prefix the list name with a relevant emoji (e.g. "🔧 Dev: Build Tool", "🤖 AI: LLM Agent", "🔒 Security: Secrets").';
+const BATCH_EMOJI =
+  "Prefix each list name with a relevant emoji (e.g. 🔧 Dev, 🤖 AI, 🔒 Security).";
+
+const SINGLE_CATEGORY =
+  'Use the format "Category: Name" (e.g. "Dev: JS Framework", "Dev: CSS Library", "Dev: Build Tool", "Dev: Testing", "AI: Dev Tools", "AI: LLM Agent", "AI: Chatbot UI", "Infra: Docker", "Infra: Monitoring", "Infra: CI/CD", "Data: Visualization", "Data: Database", "Security: Secrets", "Bitcoin: Node", "Bitcoin: Wallet", "Self-hosted: Media", "Self-hosted: Dashboard").';
+const BATCH_CATEGORY =
+  'Use the format "Category: Name" (e.g. "Dev: JS Framework", "AI: LLM Agent", "Infra: Docker").';
+
+type PromptCopy = {
+  emoji: string;
+  category: string;
+  /** Batch says "a repo"; the single prompt says "this repo". */
+  repo: "this repo" | "a repo";
+  /** Single-repo rejections also say to pick something different. */
+  pickDifferent: boolean;
+};
+
+const SINGLE_COPY: PromptCopy = {
+  emoji: SINGLE_EMOJI,
+  category: SINGLE_CATEGORY,
+  repo: "this repo",
+  pickDifferent: true,
+};
+
+const BATCH_COPY: PromptCopy = {
+  emoji: BATCH_EMOJI,
+  category: BATCH_CATEGORY,
+  repo: "a repo",
+  pickDifferent: false,
+};
+
+function listNames(existingLists: string[]): string {
+  return existingLists.join(", ");
+}
+
+/**
+ * Conditional instructions shared by both prompts. Closers ("3 words",
+ * plain nouns, JSON-only) stay with the caller — they are not the same text.
+ */
+function conditionalLines(
+  existingLists: string[],
+  style: CategoryStyle,
+  previousCategories: string[],
+  copy: PromptCopy,
+): {
+  emoji: string;
+  style: string;
+  lists: string;
+  previous: string;
+  category: string;
+} {
+  const { useEmojis, useCategories } = resolvedStyle(existingLists, style);
+  const names = listNames(existingLists);
+  const rejected = previousCategories.join(", ");
+
+  return {
+    emoji: useEmojis ? copy.emoji : "",
+    style:
+      existingLists.length > 0
+        ? `Match the formatting style (emoji, prefix pattern, casing) of existing lists: ${names}, but still prefer broad names.`
+        : "",
+    lists:
+      existingLists.length > 0
+        ? `Existing star lists: ${names}. If ${copy.repo} fits an existing list, return that exact name. Otherwise, pick a new one.`
+        : "",
+    previous:
+      previousCategories.length > 0
+        ? `Previously suggested (and rejected) names: ${rejected}. Do NOT repeat any of these names.${copy.pickDifferent ? " Pick something different." : ""}`
+        : "",
+    category: useCategories ? copy.category : "",
+  };
+}
+
+function joinParagraphs(lines: string[]): string {
+  return lines.filter((line) => line.length > 0).join("\n\n");
+}
+
 export function buildPrompt(
   metadata: RepoMetadata,
   owner: string,
@@ -68,48 +159,13 @@ export function buildPrompt(
   style: CategoryStyle = DEFAULT_CATEGORY_STYLE,
   previousCategories: string[] = [],
 ): string {
-  const { useEmojis, useCategories } = resolvedStyle(existingLists, style);
-
-  const emojiHint = useEmojis
-    ? `
-Prefix the list name with a relevant emoji (e.g. "🔧 Dev: Build Tool",
-"🤖 AI: LLM Agent", "🔒 Security: Secrets").
-`
-    : "";
-
-  const styleHint =
-    existingLists.length > 0
-      ? `
-Match the formatting style (emoji, prefix pattern, casing) of existing lists:
-${existingLists.join(", ")}, but still prefer broad names
-`
-      : "";
-
-  const listsSection =
-    existingLists.length > 0
-      ? `
-Existing star lists: ${existingLists.join(", ")}
-If this repo fits an existing list, return that exact name. Otherwise, pick a new one.
-`
-      : "";
-
-  const categoryPrompt = useCategories
-    ? `
-Use the format "Category: Name" (e.g. "Dev: JS Framework", "Dev: CSS Library",
-"Dev: Build Tool", "Dev: Testing", "AI: Dev Tools", "AI: LLM Agent", "AI: Chatbot UI",
-"Infra: Docker", "Infra: Monitoring", "Infra: CI/CD", "Data: Visualization",
-"Data: Database", "Security: Secrets", "Bitcoin: Node", "Bitcoin: Wallet",
-"Self-hosted: Media", "Self-hosted: Dashboard").
-`
-    : "";
-
-  const previousSection =
-    previousCategories.length > 0
-      ? `
-Previously suggested (and rejected) names: ${previousCategories.join(", ")}
-Do NOT repeat any of these names. Pick something different.
-`
-      : "";
+  const lines = conditionalLines(
+    existingLists,
+    style,
+    previousCategories,
+    SINGLE_COPY,
+  );
+  const category = lines.category ? `${lines.category} ` : "";
 
   return unwrap(
     trimNewlines(`
@@ -118,14 +174,10 @@ Repository: ${owner}/${repo}
 Description: ${metadata.description || "N/A"}
 Language: ${metadata.language || "N/A"}
 Topics: ${metadata.topics.join(", ") || "N/A"}
-${trimNewlines(emojiHint)}
-${trimNewlines(styleHint)}
-${trimNewlines(listsSection)}
-${trimNewlines(previousSection)}
-Use at most 3 words total, not counting the emoji. ${trimNewlines(categoryPrompt)}
-Otherwise use plain nouns (e.g. "CLI Tool", "Browser Extension").
-Prefer broad categories that could group 5+ similar repos. Name the type of tool,
-not the specific technique it uses — "AI: Dev Tools" is better than "AI: Context Compression".
+
+${joinParagraphs([lines.emoji, lines.style, lines.lists, lines.previous])}
+
+Use at most 3 words total, not counting the emoji. ${category}Otherwise use plain nouns (e.g. "CLI Tool", "Browser Extension"). Prefer broad categories that could group 5+ similar repos. Name the type of tool, not the specific technique it uses — "AI: Dev Tools" is better than "AI: Context Compression".
 Output ONLY the list name. No explanation, no punctuation at the end.
 `),
   );
@@ -166,31 +218,12 @@ export function buildBatchPrompt(
   style: CategoryStyle = DEFAULT_CATEGORY_STYLE,
   previousCategories: string[] = [],
 ): string {
-  const { useEmojis, useCategories } = resolvedStyle(existingLists, style);
-
-  const emojiHint = useEmojis
-    ? "Prefix each list name with a relevant emoji (e.g. 🔧 Dev, 🤖 AI, 🔒 Security)."
-    : "";
-
-  const styleHint =
-    existingLists.length > 0
-      ? `Match the formatting style (emoji, prefix pattern, casing) of existing lists: ${existingLists.join(", ")}, but still prefer broad names.`
-      : "";
-
-  const listsSection =
-    existingLists.length > 0
-      ? `Existing star lists: ${existingLists.join(", ")}. If a repo fits an existing list, return that exact name. Otherwise, pick a new one.`
-      : "";
-
-  const previousSection =
-    previousCategories.length > 0
-      ? `Previously suggested (and rejected) names: ${previousCategories.join(", ")}. Do NOT repeat any of these names.`
-      : "";
-
-  const categoryHint = useCategories
-    ? 'Use the format "Category: Name" (e.g. "Dev: JS Framework", "AI: LLM Agent", "Infra: Docker").'
-    : "";
-
+  const lines = conditionalLines(
+    existingLists,
+    style,
+    previousCategories,
+    BATCH_COPY,
+  );
   const repoList = repos
     .map(
       (r) =>
@@ -205,11 +238,7 @@ export function buildBatchPrompt(
     trimNewlines(`
 Assign a single list name to each GitHub repository for organizing GitHub stars.
 
-${listsSection}
-${trimNewlines(styleHint)}
-${trimNewlines(emojiHint)}
-${trimNewlines(categoryHint)}
-${trimNewlines(previousSection)}
+${joinParagraphs([lines.lists, lines.style, lines.emoji, lines.category, lines.previous])}
 
 Repositories:
 

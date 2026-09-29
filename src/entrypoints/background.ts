@@ -19,18 +19,16 @@ import {
 } from "@/shared/github";
 import {
   validateToken,
-  getViewerLists,
   getRepoNodeId,
   updateUserListsForItem,
   starRepository,
   streamAllStarredRepos,
   getRepoListMap,
   GRAPHQL_PAGE_SIZE,
-  assignRepoToList,
-  type GitHubList,
+  ListCatalog,
 } from "@/shared/github-lists";
 import { batchCategorize } from "@/shared/batch-categorize";
-import type { AiProviderClient } from "@/shared/providers/base";
+import { categoryStyle, type AiProviderClient } from "@/shared/providers/base";
 import { createProviderClient } from "@/shared/providers/factory";
 import { logger } from "@/shared/logger";
 
@@ -72,54 +70,72 @@ export default defineBackground(() => {
 
 const inFlight = new Set<string>();
 
+const TOKEN_REQUIRED =
+  "GitHub token is required. Add it in the extension popup.";
+const PROVIDER_REQUIRED =
+  "No AI provider configured. Open the extension popup.";
+
+type ReadyContext = {
+  settings: ExtensionSettings;
+  token: string;
+  client: AiProviderClient;
+};
+
+async function requireToken(): Promise<
+  { settings: ExtensionSettings; token: string } | { error: string }
+> {
+  const settings = await storage.getSettings();
+  const token = settings.githubToken;
+  if (!token) return { error: TOKEN_REQUIRED };
+  return { settings, token };
+}
+
+async function requireReady(): Promise<ReadyContext | { error: string }> {
+  const ready = await requireToken();
+  if ("error" in ready) return ready;
+
+  const client = createProviderClient(
+    ready.settings.activeProvider,
+    ready.settings.providers,
+  );
+  if (!client) return { error: PROVIDER_REQUIRED };
+
+  return { ...ready, client };
+}
+
 async function categorizeAndAssign(
   tabId: number,
   owner: string,
   repo: string,
-  token: string,
   settings: ExtensionSettings,
   client: AiProviderClient,
   repoNodeId: string,
   metadata: RepoMetadata,
-  lists: GitHubList[],
+  catalog: ListCatalog,
   previousCategories?: string[],
 ): Promise<{
   category: string;
   listId: string;
   listName: string;
 }> {
-  const existingNames = lists.map((l) => l.name);
-
   const category = await client.categorize({
     metadata,
     owner,
     repo,
-    existingLists: existingNames,
-    style: {
-      enableEmojis: settings.enableEmojis,
-      enableCategoryPrefix: settings.enableCategoryPrefix,
-      autoFormat: settings.autoFormat,
-    },
+    existingLists: catalog.names(),
+    style: categoryStyle(settings),
     previousCategories: previousCategories ?? [],
   });
   logger.log("[stars] bg | AI result:", category);
 
-  const assigned = await assignRepoToList(repoNodeId, category, {
-    token,
-    listPrivacy: settings.listPrivacy,
-    lists,
-  });
-  logger.log(
-    "[stars] bg | assignRepoToList:",
-    assigned.created ? "created" : "matched",
-    assigned.list.name,
-  );
+  const list = await catalog.assign(repoNodeId, category);
+  logger.log("[stars] bg | assigned list:", list.name);
 
-  await sendStatus(tabId, owner, repo, "saved", assigned.list.name);
+  await sendStatus(tabId, owner, repo, "saved", list.name);
   return {
     category,
-    listId: assigned.list.id,
-    listName: assigned.list.name,
+    listId: list.id,
+    listName: list.name,
   };
 }
 
@@ -138,27 +154,30 @@ async function handleStarClick(
   inFlight.add(fullName);
 
   try {
-    const settings = await storage.getSettings();
-    const token = settings.githubToken;
-
-    if (!token) {
-      await sendStatus(
-        tabId,
-        owner,
-        repo,
-        "error",
-        undefined,
-        "GitHub token is required. Add it in the extension popup.",
-      );
-      return;
-    }
-
     // Unstar — just clear local cache, no API calls needed.
     // GitHub handles removing the repo from any lists on unstar.
     if (action === "unstar") {
+      const settings = await storage.getSettings();
+      if (!settings.githubToken) {
+        await sendStatus(
+          tabId,
+          owner,
+          repo,
+          "error",
+          undefined,
+          TOKEN_REQUIRED,
+        );
+        return;
+      }
       logger.log("[stars] bg unstar branch | fullName:", fullName);
       await storage.removeRepo(fullName);
       await sendStatus(tabId, owner, repo, "removed");
+      return;
+    }
+
+    const ready = await requireReady();
+    if ("error" in ready) {
+      await sendStatus(tabId, owner, repo, "error", undefined, ready.error);
       return;
     }
 
@@ -166,11 +185,11 @@ async function handleStarClick(
     await sendStatus(tabId, owner, repo, "categorizing");
 
     logger.log("[stars] bg | validating token...");
-    await validateToken(token);
+    await validateToken(ready.token);
     logger.log("[stars] bg | token valid");
 
     logger.log("[stars] bg | fetchRepoMetadata...");
-    const metadata = await fetchRepoMetadata(owner, repo, token);
+    const metadata = await fetchRepoMetadata(owner, repo, ready.token);
     logger.log(
       "[stars] bg | metadata:",
       metadata.language,
@@ -178,47 +197,32 @@ async function handleStarClick(
       "topics",
     );
 
-    logger.log("[stars] bg | getViewerLists...");
-    const lists = await getViewerLists(token);
-    logger.log("[stars] bg | lists:", lists.length);
-
-    const client = createProviderClient(
-      settings.activeProvider,
-      settings.providers[settings.activeProvider],
+    const catalog = await ListCatalog.load(
+      ready.token,
+      ready.settings.listPrivacy,
     );
-    if (!client) {
-      await sendStatus(
-        tabId,
-        owner,
-        repo,
-        "error",
-        undefined,
-        "No AI provider configured. Open the extension popup.",
-      );
-      return;
-    }
+    logger.log("[stars] bg | lists:", catalog.names().length);
 
     logger.log("[stars] bg | getRepoNodeId...");
-    const repoNodeId = await getRepoNodeId(owner, repo, token);
+    const repoNodeId = await getRepoNodeId(owner, repo, ready.token);
     logger.log("[stars] bg | starRepository...");
-    await starRepository(repoNodeId, token);
+    await starRepository(repoNodeId, ready.token);
 
     logger.log(
       "[stars] bg | AI categorize | provider:",
-      settings.activeProvider,
+      ready.settings.activeProvider,
       "| model:",
-      settings.providers[settings.activeProvider]?.model,
+      ready.settings.providers[ready.settings.activeProvider]?.model,
     );
     const result = await categorizeAndAssign(
       tabId,
       owner,
       repo,
-      token,
-      settings,
-      client,
+      ready.settings,
+      ready.client,
       repoNodeId,
       metadata,
-      lists,
+      catalog,
     );
     const now = new Date().toISOString();
     await storage.saveRepo({
@@ -275,43 +279,21 @@ async function handleRegenerate(
       return;
     }
 
-    const settings = await storage.getSettings();
-    const token = settings.githubToken;
-
-    if (!token) {
-      await sendStatus(
-        tabId,
-        owner,
-        repo,
-        "error",
-        undefined,
-        "GitHub token is required",
-      );
+    const ready = await requireReady();
+    if ("error" in ready) {
+      await sendStatus(tabId, owner, repo, "error", undefined, ready.error);
       return;
     }
 
     await sendStatus(tabId, owner, repo, "categorizing");
 
-    const client = createProviderClient(
-      settings.activeProvider,
-      settings.providers[settings.activeProvider],
-    );
-    if (!client) {
-      await sendStatus(
-        tabId,
-        owner,
-        repo,
-        "error",
-        undefined,
-        "No AI provider configured",
-      );
-      return;
-    }
-
     logger.log("[regenerate] bg | removing from list:", record.listName);
-    await updateUserListsForItem(record.nodeId, [], token);
+    await updateUserListsForItem(record.nodeId, [], ready.token);
 
-    const lists = await getViewerLists(token);
+    const catalog = await ListCatalog.load(
+      ready.token,
+      ready.settings.listPrivacy,
+    );
 
     const allRejected = [currentCategory, ...previousCategories];
     logger.log("[regenerate] bg | AI categorize | rejected:", allRejected);
@@ -325,12 +307,11 @@ async function handleRegenerate(
       tabId,
       owner,
       repo,
-      token,
-      settings,
-      client,
+      ready.settings,
+      ready.client,
       record.nodeId,
       metadata,
-      lists,
+      catalog,
       allRejected,
     );
     await storage.saveRepo({
@@ -370,44 +351,22 @@ async function sendStatus(
 type JobReply = { alreadyRunning: true } | { error: string } | null;
 type CancelReply = { success: true } | { notRunning: true };
 
-function createJob<S>(config: {
-  storageKey: "batchStatus" | "syncStatus";
-  messageType: "batchProgress" | "syncProgress";
-  isRunning: (status: S | undefined) => boolean;
-  run: (
-    open: () => AbortSignal,
-    publish: (status: S) => Promise<void>,
-  ) => Promise<{ error: string } | void>;
+function createJob(config: {
+  isRunning: () => Promise<boolean>;
+  run: (signal: AbortSignal) => Promise<{ error: string } | void>;
 }): { start: () => Promise<JobReply>; cancel: () => Promise<CancelReply> } {
   let abortController: AbortController | null = null;
 
-  async function publish(status: S): Promise<void> {
-    await browser.storage.session.set({ [config.storageKey]: status });
-    try {
-      await browser.runtime.sendMessage({
-        type: config.messageType,
-        payload: status,
-      } as BatchProgressMessage | SyncProgressMessage);
-    } catch {
-      // Popup may not be open
-    }
-  }
-
   return {
     async start() {
-      const stored = await browser.storage.session.get(config.storageKey);
-      const current = stored[config.storageKey] as S | undefined;
-      if (config.isRunning(current)) return { alreadyRunning: true };
+      if (abortController || (await config.isRunning())) {
+        return { alreadyRunning: true };
+      }
 
-      let controller: AbortController | null = null;
-      const open = (): AbortSignal => {
-        controller = new AbortController();
-        abortController = controller;
-        return controller.signal;
-      };
-
+      const controller = new AbortController();
+      abortController = controller;
       try {
-        const reply = await config.run(open, publish);
+        const reply = await config.run(controller.signal);
         return reply ?? null;
       } finally {
         if (abortController === controller) abortController = null;
@@ -421,31 +380,47 @@ function createJob<S>(config: {
   };
 }
 
-const batchJob = createJob<BatchStatus>({
-  storageKey: "batchStatus",
-  messageType: "batchProgress",
-  isRunning: (status) => status?.state === "running",
-  run: async (open, publish) => {
-    const settings = await storage.getSettings();
-    const token = settings.githubToken;
+async function publishBatch(status: BatchStatus): Promise<void> {
+  await browser.storage.session.set({ batchStatus: status });
+  try {
+    const message: BatchProgressMessage = {
+      type: "batchProgress",
+      payload: status,
+    };
+    await browser.runtime.sendMessage(message);
+  } catch {
+    // Popup may not be open
+  }
+}
 
-    if (!token) {
-      return {
-        error: "GitHub token is required. Add it in the extension popup.",
-      };
-    }
+async function publishSync(status: SyncStatus): Promise<void> {
+  await browser.storage.session.set({ syncStatus: status });
+  try {
+    const message: SyncProgressMessage = {
+      type: "syncProgress",
+      payload: status,
+    };
+    await browser.runtime.sendMessage(message);
+  } catch {
+    // Popup may not be open
+  }
+}
 
-    const client = createProviderClient(
-      settings.activeProvider,
-      settings.providers[settings.activeProvider],
-    );
-    if (!client) {
-      return { error: "No AI provider configured. Open the extension popup." };
-    }
+async function sessionIsRunning(
+  key: "batchStatus" | "syncStatus",
+): Promise<boolean> {
+  const stored = await browser.storage.session.get(key);
+  const status = stored[key] as { state?: string } | undefined;
+  return status?.state === "running";
+}
 
-    const signal = open();
+const batchJob = createJob({
+  isRunning: () => sessionIsRunning("batchStatus"),
+  run: async (signal) => {
+    const ready = await requireReady();
+    if ("error" in ready) return ready;
 
-    await publish({
+    await publishBatch({
       state: "running",
       current: 0,
       currentRepo: "",
@@ -453,17 +428,15 @@ const batchJob = createJob<BatchStatus>({
 
     try {
       const result = await batchCategorize({
-        token,
-        client,
+        token: ready.token,
+        client: ready.client,
         settings: {
-          listPrivacy: settings.listPrivacy,
-          enableEmojis: settings.enableEmojis,
-          enableCategoryPrefix: settings.enableCategoryPrefix,
-          autoFormat: settings.autoFormat,
+          listPrivacy: ready.settings.listPrivacy,
+          style: categoryStyle(ready.settings),
         },
         signal,
         onProgress: async (current, repoName, message) => {
-          await publish({
+          await publishBatch({
             state: "running",
             current,
             currentRepo: repoName,
@@ -472,7 +445,7 @@ const batchJob = createJob<BatchStatus>({
         },
       });
 
-      await publish(
+      await publishBatch(
         result.cancelled
           ? {
               state: "cancelled",
@@ -488,7 +461,7 @@ const batchJob = createJob<BatchStatus>({
             },
       );
     } catch (err) {
-      await publish({
+      await publishBatch({
         state: "error",
         message: err instanceof Error ? err.message : "Unknown error",
       });
@@ -497,23 +470,13 @@ const batchJob = createJob<BatchStatus>({
   },
 });
 
-const syncJob = createJob<SyncStatus>({
-  storageKey: "syncStatus",
-  messageType: "syncProgress",
-  isRunning: (status) => status?.state === "running",
-  run: async (open, publish) => {
-    const settings = await storage.getSettings();
-    const token = settings.githubToken;
+const syncJob = createJob({
+  isRunning: () => sessionIsRunning("syncStatus"),
+  run: async (signal) => {
+    const ready = await requireToken();
+    if ("error" in ready) return ready;
 
-    if (!token) {
-      return {
-        error: "GitHub token is required. Add it in the extension popup.",
-      };
-    }
-
-    const signal = open();
-
-    await publish({ state: "running", synced: 0 });
+    await publishSync({ state: "running", synced: 0 });
 
     let synced = 0;
     const pending: RepoRecord[] = [];
@@ -525,15 +488,15 @@ const syncJob = createJob<SyncStatus>({
     };
 
     try {
-      await publish({
+      await publishSync({
         state: "running",
         synced: 0,
         message: "Fetching repo lists...",
       });
-      const listMap = await getRepoListMap(token, signal);
+      const listMap = await getRepoListMap(ready.token, signal);
       const existing = await storage.getRepos();
 
-      for await (const repo of streamAllStarredRepos(token, signal)) {
+      for await (const repo of streamAllStarredRepos(ready.token, signal)) {
         if (signal.aborted) break;
 
         const membership = listMap.get(repo.nodeId);
@@ -553,7 +516,7 @@ const syncJob = createJob<SyncStatus>({
         });
 
         synced++;
-        await publish({
+        await publishSync({
           state: "running",
           synced,
           message: `Syncing ${repo.nameWithOwner}...`,
@@ -566,7 +529,7 @@ const syncJob = createJob<SyncStatus>({
 
       await flushPending();
 
-      await publish(
+      await publishSync(
         signal.aborted
           ? {
               state: "cancelled",
@@ -590,13 +553,13 @@ const syncJob = createJob<SyncStatus>({
         signal.aborted ||
         (err instanceof Error && err.name === "AbortError")
       ) {
-        await publish({
+        await publishSync({
           state: "cancelled",
           synced,
           completedAt: new Date().toISOString(),
         });
       } else {
-        await publish({
+        await publishSync({
           state: "error",
           message: err instanceof Error ? err.message : "Unknown error",
         });

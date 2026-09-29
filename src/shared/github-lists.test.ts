@@ -9,14 +9,13 @@ import {
 import {
   validateToken,
   getViewerLists,
+  ListCatalog,
   fuzzyMatchListName,
   ScopeError,
   getAllListedRepoIds,
   getRepoListMap,
   streamUncategorizedRepos,
   streamAllStarredRepos,
-  assignRepoToList,
-  type GitHubList,
 } from "@/shared/github-lists";
 
 setupFetchMock();
@@ -954,23 +953,20 @@ describe("streamAllStarredRepos", () => {
   });
 });
 
-describe("assignRepoToList", () => {
+describe("ListCatalog.assign", () => {
   it("adds the repo to an existing list and does not create one", async () => {
     const fetchMock = vi.fn(graphqlDispatcher({}));
     vi.stubGlobal("fetch", fetchMock);
-    const lists = [{ id: "L1", name: "CLI Tools", isPrivate: true }];
+    const catalog = new ListCatalog(
+      [{ id: "L1", name: "CLI Tools", isPrivate: true }],
+      "token",
+      "private",
+    );
 
-    const result = await assignRepoToList("R1", "cli tools", {
-      token: "token",
-      listPrivacy: "private",
-      lists,
-    });
+    const list = await catalog.assign("R1", "cli tools");
 
-    expect(result).toEqual({
-      list: { id: "L1", name: "CLI Tools", isPrivate: true },
-      created: false,
-    });
-    expect(lists).toHaveLength(1);
+    expect(list).toEqual({ id: "L1", name: "CLI Tools", isPrivate: true });
+    expect(catalog.names()).toEqual(["CLI Tools"]);
     const queries = fetchMock.mock.calls.map(
       (call) =>
         JSON.parse((call[1] as RequestInit).body as string).query as string,
@@ -1002,22 +998,46 @@ describe("assignRepoToList", () => {
         });
       }),
     );
-    const lists: GitHubList[] = [];
-    const options = {
-      token: "token",
-      listPrivacy: "private" as const,
-      lists,
-    };
+    const catalog = new ListCatalog([], "token", "private");
 
     const [a, b] = await Promise.all([
-      assignRepoToList("R1", "CLI Tools", options),
-      assignRepoToList("R2", "cli  tools", options),
+      catalog.assign("R1", "CLI Tools"),
+      catalog.assign("R2", "cli  tools"),
     ]);
 
     expect(creates).toBe(1);
-    expect(lists).toEqual([{ id: "L2", name: "CLI Tools", isPrivate: true }]);
-    expect([a.created, b.created].filter(Boolean)).toHaveLength(1);
-    expect(a.list.id).toBe("L2");
-    expect(b.list.id).toBe("L2");
+    expect(catalog.names()).toEqual(["CLI Tools"]);
+    expect(a.id).toBe("L2");
+    expect(b.id).toBe("L2");
+  });
+
+  it("does not share in-flight creates across catalogs", async () => {
+    let creates = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (...args: unknown[]) => {
+        const init = args[1] as RequestInit;
+        const query = JSON.parse((init.body as string) || "{}").query as string;
+        if (query.includes("createUserList")) {
+          creates++;
+          return mockGraphqlResponse({
+            createUserList: {
+              list: { id: `L${creates}`, name: "CLI Tools", isPrivate: true },
+            },
+          });
+        }
+        return mockGraphqlResponse({
+          updateUserListsForItem: { clientMutationId: null },
+        });
+      }),
+    );
+
+    const [a, b] = await Promise.all([
+      new ListCatalog([], "token-a", "private").assign("R1", "CLI Tools"),
+      new ListCatalog([], "token-b", "private").assign("R2", "CLI Tools"),
+    ]);
+
+    expect(creates).toBe(2);
+    expect(a.id).not.toBe(b.id);
   });
 });

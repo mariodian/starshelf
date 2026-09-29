@@ -258,7 +258,7 @@ function wire() {
     el.fetchModels.textContent = "Fetching...";
 
     try {
-      const client = createProviderClient(p, settings.providers[p]);
+      const client = createProviderClient(p, settings.providers);
       if (!client?.listModels) throw new Error("Unknown provider");
       const models = await client.listModels();
       const saved = c.model;

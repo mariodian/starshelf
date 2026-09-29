@@ -4,7 +4,7 @@ import {
   mockJsonResponse,
   mockHttpError,
 } from "@/shared/test-utils";
-import { OpenAIClient } from "@/shared/providers/openai";
+import { openAIClient } from "@/shared/providers/factory";
 import { DEFAULT_CATEGORY_STYLE } from "@/shared/providers/base";
 import type { RepoMetadata } from "@/shared/github";
 
@@ -15,7 +15,7 @@ const metadata: RepoMetadata = {
 };
 
 function makeClient() {
-  return new OpenAIClient("sk-test", "gpt-5-mini");
+  return openAIClient("sk-test", "gpt-5-mini");
 }
 
 function categorizeRequest(owner: string, repo: string) {

@@ -1,7 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { graphqlDispatcher } from "@/shared/test-utils";
 import { batchCategorize } from "@/shared/batch-categorize";
-import type { AiProviderClient } from "@/shared/providers/base";
+import {
+  DEFAULT_CATEGORY_STYLE,
+  type AiProviderClient,
+} from "@/shared/providers/base";
 
 function starredRepos(
   repos: unknown[],
@@ -96,7 +99,7 @@ describe("batchCategorize", () => {
     const result = await batchCategorize({
       token: "token",
       client,
-      settings: { listPrivacy: "private" },
+      settings: { listPrivacy: "private", style: DEFAULT_CATEGORY_STYLE },
       onProgress,
     });
 
@@ -130,7 +133,7 @@ describe("batchCategorize", () => {
     const result = await batchCategorize({
       token: "token",
       client,
-      settings: { listPrivacy: "private" },
+      settings: { listPrivacy: "private", style: DEFAULT_CATEGORY_STYLE },
     });
 
     expect(result.categorized).toBe(0);
@@ -169,7 +172,7 @@ describe("batchCategorize", () => {
     const result = await batchCategorize({
       token: "token",
       client,
-      settings: { listPrivacy: "private" },
+      settings: { listPrivacy: "private", style: DEFAULT_CATEGORY_STYLE },
     });
 
     expect(result.categorized).toBe(1);
@@ -210,7 +213,7 @@ describe("batchCategorize", () => {
     const result = await batchCategorize({
       token: "token",
       client,
-      settings: { listPrivacy: "private" },
+      settings: { listPrivacy: "private", style: DEFAULT_CATEGORY_STYLE },
     });
 
     expect(result.categorized).toBe(0);
@@ -248,7 +251,7 @@ describe("batchCategorize", () => {
     const resultPromise = batchCategorize({
       token: "token",
       client,
-      settings: { listPrivacy: "private" },
+      settings: { listPrivacy: "private", style: DEFAULT_CATEGORY_STYLE },
       signal: controller.signal,
     });
 
@@ -293,7 +296,7 @@ describe("batchCategorize", () => {
     const result = await batchCategorize({
       token: "token",
       client,
-      settings: { listPrivacy: "private" },
+      settings: { listPrivacy: "private", style: DEFAULT_CATEGORY_STYLE },
     });
 
     expect(result.categorized).toBe(2);
