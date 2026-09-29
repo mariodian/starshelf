@@ -20,12 +20,12 @@ import {
   updateUserListsForItem,
   starRepository,
   deleteUserList,
-  batchCategorize,
   streamAllStarredRepos,
   getRepoListMap,
   assignRepoToList,
   type GitHubList,
 } from "@/shared/github-lists";
+import { batchCategorize } from "@/shared/batch-categorize";
 import type { AiProviderClient } from "@/shared/providers/base";
 import { createProviderClient } from "@/shared/providers/factory";
 import { logger } from "@/shared/logger";
