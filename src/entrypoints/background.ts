@@ -54,13 +54,13 @@ export default defineBackground(() => {
       );
       handleRegenerate(message.payload, sender.tab?.id);
     } else if (message.type === "startBatch") {
-      return handleStartBatch();
+      return batchJob.start();
     } else if (message.type === "cancelBatch") {
-      return handleCancelBatch();
+      return batchJob.cancel();
     } else if (message.type === "syncRepos") {
-      return handleSyncRepos();
+      return syncJob.start();
     } else if (message.type === "cancelSync") {
-      return handleCancelSync();
+      return syncJob.cancel();
     }
   });
 });
@@ -476,236 +476,220 @@ async function sendStatus(
   }
 }
 
-let batchAbortController: AbortController | null = null;
+type JobReply = { alreadyRunning: true } | { error: string } | null;
+type CancelReply = { success: true } | { notRunning: true };
 
-async function handleStartBatch(): Promise<
-  { alreadyRunning: true } | { error: string } | null
-> {
-  const current = await browser.storage.session
-    .get("batchStatus")
-    .then((r) => r.batchStatus as BatchStatus | undefined);
-  if (current?.state === "running") {
-    return { alreadyRunning: true };
+function createJob<S>(config: {
+  storageKey: "batchStatus" | "syncStatus";
+  messageType: "batchProgress" | "syncProgress";
+  isRunning: (status: S | undefined) => boolean;
+  run: (
+    open: () => AbortSignal,
+    publish: (status: S) => Promise<void>,
+  ) => Promise<{ error: string } | void>;
+}): { start: () => Promise<JobReply>; cancel: () => Promise<CancelReply> } {
+  let abortController: AbortController | null = null;
+
+  async function publish(status: S): Promise<void> {
+    await browser.storage.session.set({ [config.storageKey]: status });
+    try {
+      await browser.runtime.sendMessage({
+        type: config.messageType,
+        payload: status,
+      } as BatchProgressMessage | SyncProgressMessage);
+    } catch {
+      // Popup may not be open
+    }
   }
 
-  const settings = await storage.getSettings();
-  const token = settings.githubToken;
+  return {
+    async start() {
+      const stored = await browser.storage.session.get(config.storageKey);
+      const current = stored[config.storageKey] as S | undefined;
+      if (config.isRunning(current)) return { alreadyRunning: true };
 
-  if (!token) {
-    return {
-      error: "GitHub token is required. Add it in the extension popup.",
-    };
-  }
+      let controller: AbortController | null = null;
+      const open = (): AbortSignal => {
+        controller = new AbortController();
+        abortController = controller;
+        return controller.signal;
+      };
 
-  const client = createProviderClient(
-    settings.activeProvider,
-    settings.providers[settings.activeProvider],
-  );
-  if (!client) {
-    return { error: "No AI provider configured. Open the extension popup." };
-  }
-
-  batchAbortController = new AbortController();
-  const signal = batchAbortController.signal;
-
-  const runningStatus: BatchStatus = {
-    state: "running",
-    current: 0,
-    currentRepo: "",
+      try {
+        const reply = await config.run(open, publish);
+        return reply ?? null;
+      } finally {
+        if (abortController === controller) abortController = null;
+      }
+    },
+    async cancel() {
+      if (!abortController) return { notRunning: true };
+      abortController.abort();
+      return { success: true };
+    },
   };
-  await updateBatchStatus(runningStatus);
-
-  try {
-    const result = await batchCategorize({
-      token,
-      client,
-      settings: {
-        listPrivacy: settings.listPrivacy,
-        enableEmojis: settings.enableEmojis,
-        enableCategoryPrefix: settings.enableCategoryPrefix,
-        autoFormat: settings.autoFormat,
-      },
-      signal,
-      onProgress: async (current, repoName, message) => {
-        const status: BatchStatus = {
-          state: "running",
-          current,
-          currentRepo: repoName,
-          message,
-        };
-        await updateBatchStatus(status);
-      },
-    });
-
-    const terminalStatus: BatchStatus = result.cancelled
-      ? {
-          state: "cancelled",
-          categorized: result.categorized,
-          skipped: result.failed,
-          completedAt: new Date().toISOString(),
-        }
-      : {
-          state: "done",
-          categorized: result.categorized,
-          skipped: result.failed,
-          completedAt: new Date().toISOString(),
-        };
-
-    await updateBatchStatus(terminalStatus);
-  } catch (err) {
-    const errorStatus: BatchStatus = {
-      state: "error",
-      message: err instanceof Error ? err.message : "Unknown error",
-    };
-    await updateBatchStatus(errorStatus);
-    logger.error("[batch] bg | batchCategorize failed:", err);
-  } finally {
-    batchAbortController = null;
-  }
-
-  return null;
 }
 
-async function handleCancelBatch(): Promise<
-  { success: true } | { notRunning: true }
-> {
-  if (!batchAbortController) {
-    return { notRunning: true };
-  }
+const batchJob = createJob<BatchStatus>({
+  storageKey: "batchStatus",
+  messageType: "batchProgress",
+  isRunning: (status) => status?.state === "running",
+  run: async (open, publish) => {
+    const settings = await storage.getSettings();
+    const token = settings.githubToken;
 
-  batchAbortController.abort();
-  return { success: true };
-}
-
-async function updateBatchStatus(status: BatchStatus): Promise<void> {
-  await browser.storage.session.set({ batchStatus: status });
-  try {
-    await browser.runtime.sendMessage({
-      type: "batchProgress",
-      payload: status,
-    } as BatchProgressMessage);
-  } catch {
-    // Popup may not be open
-  }
-}
-
-let syncAbortController: AbortController | null = null;
-
-async function handleSyncRepos(): Promise<
-  { alreadyRunning: true } | { error: string } | null
-> {
-  const current = await browser.storage.session
-    .get("syncStatus")
-    .then((r) => r.syncStatus as SyncStatus | undefined);
-  if (current?.state === "running") {
-    return { alreadyRunning: true };
-  }
-
-  const settings = await storage.getSettings();
-  const token = settings.githubToken;
-
-  if (!token) {
-    return {
-      error: "GitHub token is required. Add it in the extension popup.",
-    };
-  }
-
-  syncAbortController = new AbortController();
-  const signal = syncAbortController.signal;
-
-  await updateSyncStatus({ state: "running", synced: 0 });
-
-  let synced = 0;
-  try {
-    await updateSyncStatus({
-      state: "running",
-      synced: 0,
-      message: "Fetching repo lists...",
-    });
-    const listMap = await getRepoListMap(token, signal);
-
-    for await (const repo of streamAllStarredRepos(token, signal)) {
-      if (signal.aborted) break;
-
-      const membership = listMap.get(repo.nodeId);
-      const now = new Date().toISOString();
-      await storage.saveRepo({
-        owner: repo.owner,
-        repo: repo.repo,
-        fullName: repo.nameWithOwner,
-        nodeId: repo.nodeId,
-        description: repo.description,
-        language: repo.language,
-        topics: repo.topics,
-        listId: membership?.listId,
-        listName: membership?.listName,
-        starredAt: now,
-        updatedAt: now,
-      });
-
-      synced++;
-      await updateSyncStatus({
-        state: "running",
-        synced,
-        message: `Syncing ${repo.nameWithOwner}...`,
-      });
+    if (!token) {
+      return {
+        error: "GitHub token is required. Add it in the extension popup.",
+      };
     }
 
-    const terminalStatus: SyncStatus = signal.aborted
-      ? {
-          state: "cancelled",
-          synced,
-          completedAt: new Date().toISOString(),
-        }
-      : {
-          state: "done",
-          synced,
-          completedAt: new Date().toISOString(),
-        };
+    const client = createProviderClient(
+      settings.activeProvider,
+      settings.providers[settings.activeProvider],
+    );
+    if (!client) {
+      return { error: "No AI provider configured. Open the extension popup." };
+    }
 
-    await updateSyncStatus(terminalStatus);
-  } catch (err) {
-    if (signal.aborted || (err instanceof Error && err.name === "AbortError")) {
-      const cancelledStatus: SyncStatus = {
-        state: "cancelled",
-        synced,
-        completedAt: new Date().toISOString(),
-      };
-      await updateSyncStatus(cancelledStatus);
-    } else {
-      const errorStatus: SyncStatus = {
+    const signal = open();
+
+    await publish({
+      state: "running",
+      current: 0,
+      currentRepo: "",
+    });
+
+    try {
+      const result = await batchCategorize({
+        token,
+        client,
+        settings: {
+          listPrivacy: settings.listPrivacy,
+          enableEmojis: settings.enableEmojis,
+          enableCategoryPrefix: settings.enableCategoryPrefix,
+          autoFormat: settings.autoFormat,
+        },
+        signal,
+        onProgress: async (current, repoName, message) => {
+          await publish({
+            state: "running",
+            current,
+            currentRepo: repoName,
+            message,
+          });
+        },
+      });
+
+      await publish(
+        result.cancelled
+          ? {
+              state: "cancelled",
+              categorized: result.categorized,
+              skipped: result.failed,
+              completedAt: new Date().toISOString(),
+            }
+          : {
+              state: "done",
+              categorized: result.categorized,
+              skipped: result.failed,
+              completedAt: new Date().toISOString(),
+            },
+      );
+    } catch (err) {
+      await publish({
         state: "error",
         message: err instanceof Error ? err.message : "Unknown error",
-      };
-      await updateSyncStatus(errorStatus);
-      logger.error("[sync] bg | syncRepos failed:", err);
+      });
+      logger.error("[batch] bg | batchCategorize failed:", err);
     }
-  } finally {
-    syncAbortController = null;
-  }
+  },
+});
 
-  return null;
-}
+const syncJob = createJob<SyncStatus>({
+  storageKey: "syncStatus",
+  messageType: "syncProgress",
+  isRunning: (status) => status?.state === "running",
+  run: async (open, publish) => {
+    const settings = await storage.getSettings();
+    const token = settings.githubToken;
 
-async function handleCancelSync(): Promise<
-  { success: true } | { notRunning: true }
-> {
-  if (!syncAbortController) {
-    return { notRunning: true };
-  }
+    if (!token) {
+      return {
+        error: "GitHub token is required. Add it in the extension popup.",
+      };
+    }
 
-  syncAbortController.abort();
-  return { success: true };
-}
+    const signal = open();
 
-async function updateSyncStatus(status: SyncStatus): Promise<void> {
-  await browser.storage.session.set({ syncStatus: status });
-  try {
-    await browser.runtime.sendMessage({
-      type: "syncProgress",
-      payload: status,
-    } as SyncProgressMessage);
-  } catch {
-    // Popup may not be open
-  }
-}
+    await publish({ state: "running", synced: 0 });
+
+    let synced = 0;
+    try {
+      await publish({
+        state: "running",
+        synced: 0,
+        message: "Fetching repo lists...",
+      });
+      const listMap = await getRepoListMap(token, signal);
+
+      for await (const repo of streamAllStarredRepos(token, signal)) {
+        if (signal.aborted) break;
+
+        const membership = listMap.get(repo.nodeId);
+        const now = new Date().toISOString();
+        await storage.saveRepo({
+          owner: repo.owner,
+          repo: repo.repo,
+          fullName: repo.nameWithOwner,
+          nodeId: repo.nodeId,
+          description: repo.description,
+          language: repo.language,
+          topics: repo.topics,
+          listId: membership?.listId,
+          listName: membership?.listName,
+          starredAt: now,
+          updatedAt: now,
+        });
+
+        synced++;
+        await publish({
+          state: "running",
+          synced,
+          message: `Syncing ${repo.nameWithOwner}...`,
+        });
+      }
+
+      await publish(
+        signal.aborted
+          ? {
+              state: "cancelled",
+              synced,
+              completedAt: new Date().toISOString(),
+            }
+          : {
+              state: "done",
+              synced,
+              completedAt: new Date().toISOString(),
+            },
+      );
+    } catch (err) {
+      if (
+        signal.aborted ||
+        (err instanceof Error && err.name === "AbortError")
+      ) {
+        await publish({
+          state: "cancelled",
+          synced,
+          completedAt: new Date().toISOString(),
+        });
+      } else {
+        await publish({
+          state: "error",
+          message: err instanceof Error ? err.message : "Unknown error",
+        });
+        logger.error("[sync] bg | syncRepos failed:", err);
+      }
+    }
+  },
+});

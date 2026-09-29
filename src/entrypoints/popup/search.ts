@@ -1,7 +1,7 @@
 import Fuse from "fuse.js";
 import type { SyncStatus } from "@/shared/types/messages";
 import { storage, type RepoRecord } from "@/shared/storage";
-import { h } from "./shared";
+import { h, setJobButtons } from "./shared";
 
 let root: HTMLElement | null = null;
 let defaultEmpty: HTMLElement | null = null;
@@ -147,36 +147,28 @@ async function loadSyncStatus() {
 function renderSyncStatus(status: SyncStatus) {
   if (!fullSyncBtn || !cancelSyncBtn || !syncStatusEl) return;
 
+  setJobButtons(fullSyncBtn, cancelSyncBtn, status.state === "running");
+
   switch (status.state) {
     case "idle":
-      fullSyncBtn.style.display = "";
-      cancelSyncBtn.style.display = "none";
       syncStatusEl.textContent = "Ready";
       break;
 
     case "running":
-      fullSyncBtn.style.display = "none";
-      cancelSyncBtn.style.display = "";
       syncStatusEl.textContent =
         status.message ?? `Syncing... (${status.synced} repos)`;
       break;
 
     case "done":
-      fullSyncBtn.style.display = "";
-      cancelSyncBtn.style.display = "none";
       syncStatusEl.textContent = `Synced ${status.synced} repos`;
       refreshSearch();
       break;
 
     case "error":
-      fullSyncBtn.style.display = "";
-      cancelSyncBtn.style.display = "none";
       syncStatusEl.textContent = `Error: ${status.message}`;
       break;
 
     case "cancelled":
-      fullSyncBtn.style.display = "";
-      cancelSyncBtn.style.display = "none";
       syncStatusEl.textContent = `Cancelled. ${status.synced} repos synced.`;
       refreshSearch();
       break;

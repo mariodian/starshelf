@@ -1,5 +1,5 @@
 import type { BatchStatus } from "@/shared/types/messages";
-import { h } from "./shared";
+import { h, setJobButtons } from "./shared";
 
 let root: HTMLElement | null = null;
 let startBtn: HTMLButtonElement | null = null;
@@ -58,16 +58,14 @@ function loadStatus() {
 function renderStatus(status: BatchStatus) {
   if (!startBtn || !cancelBtn || !statusText) return;
 
+  setJobButtons(startBtn, cancelBtn, status.state === "running");
+
   switch (status.state) {
     case "idle":
-      startBtn.style.display = "";
-      cancelBtn.style.display = "none";
       statusText.textContent = "Ready";
       break;
 
     case "running":
-      startBtn.style.display = "none";
-      cancelBtn.style.display = "";
       if (status.message) {
         statusText.textContent = status.message;
       } else if (status.current > 0) {
@@ -78,20 +76,14 @@ function renderStatus(status: BatchStatus) {
       break;
 
     case "done":
-      startBtn.style.display = "";
-      cancelBtn.style.display = "none";
       statusText.textContent = `Done! ${status.categorized} categorized, ${status.skipped} skipped`;
       break;
 
     case "error":
-      startBtn.style.display = "";
-      cancelBtn.style.display = "none";
       statusText.textContent = `Error: ${status.message}`;
       break;
 
     case "cancelled":
-      startBtn.style.display = "";
-      cancelBtn.style.display = "none";
       statusText.textContent = `Stopped. ${status.categorized} categorized, ${status.skipped} skipped.`;
       break;
   }

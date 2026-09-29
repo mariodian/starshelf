@@ -30,6 +30,15 @@ export const TAB_LABELS: Record<TabId, string> = {
   settings: "Settings",
 };
 
+export function setJobButtons(
+  start: HTMLElement,
+  cancel: HTMLElement,
+  running: boolean,
+): void {
+  start.style.display = running ? "none" : "";
+  cancel.style.display = running ? "" : "none";
+}
+
 export function createTabButton(id: TabId, active: boolean): HTMLButtonElement {
   const btn = document.createElement("button");
   btn.className = `tab-btn${active ? " active" : ""}`;
