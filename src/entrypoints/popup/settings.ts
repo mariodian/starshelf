@@ -16,7 +16,7 @@ export function renderSettingsTab(): HTMLElement {
       <h2>GitHub Token</h2>
       <p>
         Create a
-        <a href="https://github.com/settings/tokens/new" target="_blank"
+        <a href="https://github.com/settings/tokens/new"
           >classic personal access token</a
         >
         with the <code>user</code>, <code>public_repo</code> and

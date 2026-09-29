@@ -75,5 +75,17 @@ browser.runtime.onMessage.addListener((msg: BackgroundMessage) => {
   }
 });
 
+// Dia closes the action popup before anchor navigation runs.
+document.addEventListener("click", (event) => {
+  if (!(event.target instanceof Element)) return;
+  const anchor = event.target.closest("a[href]");
+  if (!(anchor instanceof HTMLAnchorElement)) return;
+  event.preventDefault();
+  void browser.tabs.create({
+    url: anchor.href,
+    active: !(event.metaKey || event.ctrlKey),
+  });
+});
+
 buildTabNav();
 getDefaultTab().then((tabId) => showTab(tabId));
