@@ -573,7 +573,7 @@ function toStarredRepo(node: StarredRepoNode): StarredRepoWithLists | null {
   };
 }
 
-async function* streamStarredRepos(
+export async function* streamAllStarredRepos(
   token: string,
   signal?: AbortSignal,
 ): AsyncGenerator<StarredRepoWithLists, void, unknown> {
@@ -608,16 +608,9 @@ export async function* streamUncategorizedRepos(
   excludeNodeIds?: Set<string>,
   signal?: AbortSignal,
 ): AsyncGenerator<StarredRepoWithLists, void, unknown> {
-  for await (const repo of streamStarredRepos(token, signal)) {
+  for await (const repo of streamAllStarredRepos(token, signal)) {
     if (!excludeNodeIds || !excludeNodeIds.has(repo.nodeId)) yield repo;
   }
-}
-
-export async function* streamAllStarredRepos(
-  token: string,
-  signal?: AbortSignal,
-): AsyncGenerator<StarredRepoWithLists, void, unknown> {
-  yield* streamStarredRepos(token, signal);
 }
 
 export async function batchCategorize(
