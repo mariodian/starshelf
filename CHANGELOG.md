@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.1.4] - 2026-09-29
+
+### Changed
+
+- Shared list matching, chat completions, the abortable job runner, and list assignment so each path has one implementation.
+- Consolidated agent documentation and removed `CLAUDE.md`.
+
+### Fixed
+
+- Fixed popup search results and other links so they open in a new browser tab instead of navigating the popup away.
+- Fixed repository storage so undefined optional fields are omitted, which previously caused `chrome.storage` writes to fail.
+- Fixed full sync so repositories are flushed in pages, partial progress is kept on failure, and existing `starredAt` dates are preserved.
+- Fixed category regeneration so it uses the stored repository record instead of re-deriving metadata from the page.
+- Fixed the sync button so messaging failures are shown in the popup instead of failing silently.
+
 ## [v0.1.3] - 2026-08-04
 
 ### Added
